@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Doctor Alerts - Medical AI Assistant</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body>
+    <div class="container my-4">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <h2>Doctor Alerts</h2>
+            <div>
+                <button id="logoutBtn" class="btn btn-sm btn-outline-secondary">Clear Key</button>
+            </div>
+        </div>
+
+        <div class="row mb-3">
+            <div class="col-md-6">
+                <label class="form-label">Username</label>
+                <input id="usernameInput" class="form-control" placeholder="doctor username" />
+            </div>
+            <div class="col-md-6">
+                <label class="form-label">Password</label>
+                <input id="passwordInput" type="password" class="form-control" placeholder="password" />
+            </div>
+        </div>
+
+        <div class="mb-3">
+            <button id="loginBtn" class="btn btn-success">Login</button>
+            <button id="startPollingBtn" class="btn btn-primary" disabled>Start Polling Alerts</button>
+            <button id="stopPollingBtn" class="btn btn-secondary" disabled>Stop</button>
+        </div>
+
+        <div id="alertsContainer">
+            <p class="text-muted">No alerts yet. Alerts will appear here when patients send emergency messages.</p>
+        </div>
+
+        <hr />
+
+        <h4>Create Patient (for in-clinic onboarding)</h4>
+        <div class="card mb-3 p-3">
+            <div class="row g-2">
+                <div class="col-md-4">
+                    <label class="form-label">Username</label>
+                    <input id="newPatientUsername" class="form-control" placeholder="username (unique)" />
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label">Temporary Password (optional)</label>
+                    <input id="newPatientPassword" class="form-control" placeholder="leave blank to auto-generate" />
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label">Full name</label>
+                    <input id="newPatientFullName" class="form-control" placeholder="Patient full name" />
+                </div>
+            </div>
+            <div class="row g-2 mt-2">
+                <div class="col-md-3">
+                    <label class="form-label">Age</label>
+                    <input id="newPatientAge" class="form-control" />
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">Gender</label>
+                    <input id="newPatientGender" class="form-control" />
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label">Contact</label>
+                    <input id="newPatientContact" class="form-control" />
+                </div>
+            </div>
+            <div class="row g-2 mt-2">
+                <div class="col-12">
+                    <label class="form-label">Medical history / notes</label>
+                    <input id="newPatientHistory" class="form-control" />
+                </div>
+            </div>
+            <div class="mt-2">
+                <button id="createPatientBtn" class="btn btn-primary">Create Patient Account</button>
+                <button id="refreshPatientsBtn" class="btn btn-secondary">Refresh Patient List</button>
+            </div>
+            <div id="createPatientResult" class="mt-2 small"></div>
+        </div>
+
+        <h5>Patients</h5>
+        <div id="patientList" class="mb-4">
+            <p class="text-muted">No patients loaded. Click "Refresh Patient List" to fetch.</p>
+        </div>
+
+        <hr />
+        <h5>Audit Log</h5>
+        <div class="mb-2">
+            <button id="refreshAuditBtn" class="btn btn-sm btn-outline-secondary">Refresh Audit</button>
+        </div>
+        <div id="auditList" class="mb-4"><p class="text-muted">No audit entries loaded.</p></div>
+
+        <hr />
+
+        <h4>Session Transcript</h4>
+        <div id="transcriptContainer" class="border rounded p-3 bg-white" style="min-height:150px;">
+            <p class="text-muted">Select an alert to view the session transcript.</p>
+        </div>
+    </div>
+
+    <script>
+        let pollInterval = null;
+
+        function getDevKey() {
+            return sessionStorage.getItem('dev_api_key_doctor') || document.getElementById('devKeyInput').value.trim();
+        }
+
+        document.getElementById('loginBtn').addEventListener('click', async () => {
+            const username = document.getElementById('usernameInput').value.trim();
+            const password = document.getElementById('passwordInput').value;
+            if (!username || !password) return alert('Enter username and password');
+            try {
+                const resp = await fetch('/users/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username, password }) });
+                const j = await resp.json();
+                if (!resp.ok) return alert('Login failed: ' + (j.error || resp.statusText));
+                sessionStorage.setItem('jwt_token', j.token);
+                alert('Logged in');
+                document.getElementById('startPollingBtn').disabled = false;
+            } catch (e) {
+                alert('Network error');
+            }
+        });
+
+        document.getElementById('startPollingBtn').addEventListener('click', () => {
+            const token = sessionStorage.getItem('jwt_token');
+            if (!token) return alert('Please login first');
+            document.getElementById('startPollingBtn').disabled = true;
+            document.getElementById('stopPollingBtn').disabled = false;
+            pollAlerts();
+            pollInterval = setInterval(pollAlerts, 5000);
+        });
+
+        document.getElementById('stopPollingBtn').addEventListener('click', () => {
+            clearInterval(pollInterval);
+            pollInterval = null;
+            document.getElementById('startPollingBtn').disabled = false;
+            document.getElementById('stopPollingBtn').disabled = true;
+        });
+
+        document.getElementById('logoutBtn').addEventListener('click', () => {
+            sessionStorage.removeItem('jwt_token');
+            alert('Logged out.');
+            document.getElementById('startPollingBtn').disabled = true;
+            document.getElementById('stopPollingBtn').disabled = true;
+        });
+
+        async function pollAlerts() {
+            const key = getDevKey();
+            if (!key) return;
+
+            try {
+                const token = sessionStorage.getItem('jwt_token');
+                const headers = token ? { 'Authorization': 'Bearer ' + token } : {};
+                const resp = await fetch('/doctor/alerts', { headers });
+                if (!resp.ok) {
+                    const j = await resp.json().catch(()=>({error:'failed'}));
+                    document.getElementById('alertsContainer').innerHTML = `<div class="alert alert-danger">Error fetching alerts: ${j.error||resp.statusText}</div>`;
+                    return;
+                }
+                const data = await resp.json();
+                renderAlerts(data.alerts || []);
+            } catch (e) {
+                document.getElementById('alertsContainer').innerHTML = `<div class="alert alert-danger">Network error while fetching alerts.</div>`;
+            }
+        }
+
+        function renderAlerts(alerts) {
+            const container = document.getElementById('alertsContainer');
+            if (!alerts.length) {
+                container.innerHTML = '<p class="text-muted">No alerts currently.</p>';
+                return;
+            }
+            const list = document.createElement('div');
+            alerts.forEach(a => {
+                const card = document.createElement('div');
+                card.className = 'card mb-2';
+                card.innerHTML = `
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between">
+                            <div>
+                                <strong>${a.patient_name || 'Unknown'}</strong>
+                                <div class="text-muted small">Task: ${a.task || 'N/A'}</div>
+                                <div class="mt-2">${a.content}</div>
+                            </div>
+                            <div class="text-end">
+                                <div class="text-muted small">${a.timestamp}</div>
+                                <button class="btn btn-sm btn-outline-primary mt-2" onclick="viewTranscript(${a.session_id})">View Transcript</button>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                list.appendChild(card);
+            });
+            container.innerHTML = '';
+            container.appendChild(list);
+        }
+
+        async function viewTranscript(sessionId) {
+            try {
+                const token = sessionStorage.getItem('jwt_token');
+                const headers = token ? { 'Authorization': 'Bearer ' + token } : {};
+
+                const resp = await fetch(`/sessions/${sessionId}/messages`, { headers });
+                if (!resp.ok) {
+                    const j = await resp.json().catch(()=>({error:'failed'}));
+                    document.getElementById('transcriptContainer').innerHTML = `<div class="alert alert-danger">Error: ${j.error || resp.statusText}</div>`;
+                    return;
+                }
+                const data = await resp.json();
+                renderTranscript(data.messages || []);
+
+                // fetch attachments for the session
+                const respFiles = await fetch(`/sessions/${sessionId}/files`, { headers });
+                if (respFiles.ok) {
+                    const jf = await respFiles.json();
+                    renderFiles(jf.files || []);
+                }
+            } catch (e) {
+                document.getElementById('transcriptContainer').innerHTML = `<div class="alert alert-danger">Network error fetching transcript.</div>`;
+            }
+        }
+
+        function renderTranscript(messages) {
+            if (!messages.length) {
+                document.getElementById('transcriptContainer').innerHTML = '<p class="text-muted">No messages for this session.</p>';
+                return;
+            }
+            const wrap = document.createElement('div');
+            messages.forEach(m => {
+                const el = document.createElement('div');
+                el.className = 'mb-2';
+                el.innerHTML = `<div><strong>${m.role}</strong> <span class="text-muted small">${m.timestamp}</span></div><div>${escapeHtml(m.content)}</div>`;
+                wrap.appendChild(el);
+            });
+            document.getElementById('transcriptContainer').innerHTML = '';
+            document.getElementById('transcriptContainer').appendChild(wrap);
+            const filesArea = document.getElementById('attachmentsArea');
+            if (filesArea) filesArea.innerHTML = '';
+        }
+
+        function renderFiles(files) {
+            let filesArea = document.getElementById('attachmentsArea');
+            if (!filesArea) {
+                filesArea = document.createElement('div');
+                filesArea.id = 'attachmentsArea';
+                filesArea.className = 'mt-3';
+                document.getElementById('transcriptContainer').appendChild(filesArea);
+            }
+            if (!files.length) {
+                filesArea.innerHTML = '<div class="text-muted small">No attachments for this session.</div>';
+                return;
+            }
+            filesArea.innerHTML = '<h5>Attachments</h5>';
+            const ul = document.createElement('ul');
+            files.forEach(f => {
+                const li = document.createElement('li');
+                li.innerHTML = `<a href="/files/${f.id}" target="_blank">${escapeHtml(f.original_name)}</a> <span class="text-muted small">(${f.mime_type})</span>`;
+                ul.appendChild(li);
+            });
+            filesArea.appendChild(ul);
+        }
+
+        // --- Doctor: create patient + list patients ---
+        document.getElementById('createPatientBtn').addEventListener('click', async () => {
+            const username = document.getElementById('newPatientUsername').value.trim();
+            const password = document.getElementById('newPatientPassword').value;
+            const fullName = document.getElementById('newPatientFullName').value.trim();
+            const age = document.getElementById('newPatientAge').value.trim();
+            const gender = document.getElementById('newPatientGender').value.trim();
+            const contact = document.getElementById('newPatientContact').value.trim();
+            const history = document.getElementById('newPatientHistory').value.trim();
+            const resultEl = document.getElementById('createPatientResult');
+            resultEl.textContent = '';
+            if (!username) { resultEl.textContent = 'Username required'; return }
+            const token = sessionStorage.getItem('jwt_token');
+            if (!token) { resultEl.textContent = 'Please login first'; return }
+            const body = { username, password, fullName, age, gender, contact, medicalHistory: history };
+            try {
+                const resp = await fetch('/doctor/patients', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token }, body: JSON.stringify(body) });
+                const j = await resp.json();
+                if (!resp.ok) {
+                    resultEl.textContent = 'Error: ' + (j.error || resp.statusText);
+                    return;
+                }
+                const token = j.one_time_token;
+                const expires = j.one_time_expires;
+                const cardUrl = `/print/patient_card?username=${encodeURIComponent(j.username)}&token=${encodeURIComponent(token)}&session_id=${encodeURIComponent(j.session_id || '')}&name=${encodeURIComponent(fullName || '')}`;
+                resultEl.innerHTML = `Created patient <strong>${j.username}</strong> (id ${j.user_id}). Session id: ${j.session_id} <br/>One-time link expires: <strong>${expires}</strong><br/><a href="${cardUrl}" target="_blank" class="btn btn-sm btn-outline-secondary mt-2">Open Printable Card</a>`;
+                // refresh patient list
+                loadPatients();
+            } catch (e) {
+                resultEl.textContent = 'Network error creating patient';
+            }
+        });
+
+        document.getElementById('refreshPatientsBtn').addEventListener('click', () => loadPatients());
+
+        document.getElementById('refreshAuditBtn').addEventListener('click', () => loadAudit());
+
+        async function loadAudit(){
+            const token = sessionStorage.getItem('jwt_token');
+            if(!token){ document.getElementById('auditList').innerHTML = '<div class="text-muted">Login to view audit log.</div>'; return }
+            try{
+                const resp = await fetch('/doctor/audit', { headers: { 'Authorization': 'Bearer ' + token } });
+                if(!resp.ok){ const j = await resp.json().catch(()=>({error:'failed'})); document.getElementById('auditList').innerHTML = `<div class="alert alert-danger">${j.error||'Failed to load audit'}</div>`; return }
+                const j = await resp.json();
+                renderAuditList(j.audit||[]);
+            }catch(e){ document.getElementById('auditList').innerHTML = '<div class="alert alert-danger">Network error loading audit</div>' }
+        }
+
+        function renderAuditList(entries){
+            const el = document.getElementById('auditList');
+            if(!entries.length){ el.innerHTML = '<div class="text-muted">No audit entries found.</div>'; return }
+            const ul = document.createElement('ul');
+            ul.className = 'list-group';
+            entries.forEach(e=>{
+                const li = document.createElement('li');
+                li.className = 'list-group-item';
+                li.innerHTML = `<div><strong>${escapeHtml(e.action)}</strong> <span class="small text-muted">at ${e.timestamp}</span></div><div class="small">${escapeHtml(e.details||'')}</div>`;
+                ul.appendChild(li);
+            });
+            el.innerHTML = '';
+            el.appendChild(ul);
+        }
+
+        async function loadPatients(){
+            const token = sessionStorage.getItem('jwt_token');
+            if(!token){ document.getElementById('patientList').innerHTML = '<div class="text-muted">Login to list patients.</div>'; return }
+            try{
+                const resp = await fetch('/doctor/patients', { headers: { 'Authorization': 'Bearer ' + token } });
+                if(!resp.ok){ const j = await resp.json().catch(()=>({error:'failed'})); document.getElementById('patientList').innerHTML = `<div class="alert alert-danger">${j.error||'Failed to load patients'}</div>`; return }
+                const j = await resp.json();
+                renderPatientList(j.patients||[]);
+            }catch(e){ document.getElementById('patientList').innerHTML = '<div class="alert alert-danger">Network error loading patients</div>' }
+        }
+
+        function renderPatientList(patients){
+            const el = document.getElementById('patientList');
+            if(!patients.length){ el.innerHTML = '<div class="text-muted">No patients found.</div>'; return }
+            const ul = document.createElement('ul');
+            ul.className = 'list-group';
+            patients.forEach(p=>{
+                const li = document.createElement('li');
+                li.className = 'list-group-item d-flex justify-content-between align-items-center';
+                li.innerHTML = `<div><strong>${escapeHtml(p.username)}</strong> <div class="small text-muted">created: ${p.created_at}</div></div>`;
+                ul.appendChild(li);
+            });
+            el.innerHTML = '';
+            el.appendChild(ul);
+        }
+
+        function escapeHtml(text) {
+            if (!text) return '';
+            return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+        }
+    </script>
+</body>
+</html>

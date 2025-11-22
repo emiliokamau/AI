@@ -1,0 +1,692 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Medical AI Assistant</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css">
+    <style>
+        :root {
+            --primary-color: #0d6efd;
+            --secondary-color: #6c757d;
+            --success-color: #198754;
+            --danger-color: #dc3545;
+            --light-color: #f8f9fa;
+            --dark-color: #212529;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f5f7fa;
+            color: #333;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #0d6efd, #0056b3);
+            color: white;
+            padding: 2rem 0;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .logo i {
+            font-size: 2rem;
+        }
+        
+        .card {
+            border-radius: 12px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+            border: none;
+            margin-bottom: 1.5rem;
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+        
+        .card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 8px 16px rgba(0,0,0,0.12);
+        }
+        
+        .card-header {
+            background-color: #f8f9fa;
+            border-bottom: 1px solid #e9ecef;
+            font-weight: 600;
+            border-radius: 12px 12px 0 0 !important;
+        }
+        
+        .btn-primary {
+            background-color: var(--primary-color);
+            border: none;
+            padding: 10px 20px;
+            border-radius: 6px;
+            font-weight: 500;
+            transition: all 0.3s ease;
+        }
+        
+        .btn-primary:hover {
+            background-color: #0b5ed7;
+            transform: translateY(-2px);
+        }
+        
+        .form-control, .form-select {
+            border-radius: 8px;
+            border: 1px solid #ced4da;
+            padding: 10px 15px;
+        }
+        
+        .form-control:focus, .form-select:focus {
+            border-color: var(--primary-color);
+            box-shadow: 0 0 0 0.25rem rgba(13, 110, 253, 0.25);
+        }
+        
+        .form-label {
+            font-weight: 500;
+            margin-bottom: 0.5rem;
+        }
+        
+        .task-option {
+            border: 1px solid #e9ecef;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 10px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        
+        .task-option:hover {
+            background-color: #f8f9fa;
+            border-color: var(--primary-color);
+        }
+        
+        .task-option.selected {
+            background-color: rgba(13, 110, 253, 0.1);
+            border-color: var(--primary-color);
+        }
+        
+        .task-option i {
+            font-size: 1.5rem;
+            color: var(--primary-color);
+            margin-right: 10px;
+        }
+        
+        .chat-container {
+            display: none;
+            height: 500px;
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+        }
+        
+        .chat-header {
+            background: linear-gradient(135deg, #0d6efd, #0056b3);
+            color: white;
+            padding: 15px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .chat-messages {
+            height: calc(100% - 120px);
+            overflow-y: auto;
+            padding: 20px;
+            background-color: white;
+        }
+        
+        .message {
+            margin-bottom: 15px;
+            display: flex;
+        }
+        
+        .message.user {
+            justify-content: flex-end;
+        }
+        
+        .message-content {
+            max-width: 70%;
+            padding: 10px 15px;
+            border-radius: 18px;
+            word-wrap: break-word;
+        }
+        
+        .message.ai .message-content {
+            background-color: #f1f3f5;
+            color: #333;
+            border-top-left-radius: 0;
+        }
+        
+        .message.user .message-content {
+            background-color: var(--primary-color);
+            color: white;
+            border-top-right-radius: 0;
+        }
+        
+        .chat-input-container {
+            padding: 15px;
+            border-top: 1px solid #e9ecef;
+            background-color: white;
+            display: flex;
+        }
+        
+        .chat-input {
+            flex-grow: 1;
+            border: 1px solid #ced4da;
+            border-radius: 20px;
+            padding: 8px 15px;
+            margin-right: 10px;
+        }
+        
+        .emergency-alert {
+            background-color: #f8d7da;
+            color: #721c24;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            display: none;
+            border: 1px solid #f5c6cb;
+        }
+        
+        .emergency-alert i {
+            margin-right: 10px;
+            font-size: 1.2rem;
+        }
+        
+        .loading-indicator {
+            display: none;
+            text-align: center;
+            padding: 10px;
+        }
+        
+        .loading-indicator i {
+            animation: spin 1.5s linear infinite;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .footer {
+            background-color: #f8f9fa;
+            padding: 2rem 0;
+            margin-top: 3rem;
+            border-top: 1px solid #e9ecef;
+            color: #6c757d;
+        }
+    </style>
+</head>
+<body>
+    <header class="header">
+        <div class="container">
+            <div class="logo">
+                <i class="bi bi-heart-pulse-fill"></i>
+                <h1 class="h3 mb-0">Medical AI Assistant</h1>
+            </div>
+            <p class="mb-0 mt-2">Your virtual health companion for guidance and support</p>
+        </div>
+    </header>
+
+    <main class="container my-5">
+        <div class="emergency-alert" id="emergencyAlert">
+            <i class="bi bi-exclamation-triangle-fill"></i>
+            <strong>Emergency Notice:</strong> If you're experiencing a medical emergency, please call emergency services immediately or go to the nearest emergency room.
+        </div>
+
+        <div class="row" id="patientForm">
+            <div class="col-lg-8 mx-auto">
+                <div class="card">
+                    <div class="card-header">
+                        <i class="bi bi-person-badge me-2"></i>Patient Information
+                    </div>
+                    <div class="card-body">
+                        <form id="infoForm">
+                            <div class="row">
+                                <div class="col-md-6 mb-3">
+                                    <label for="fullName" class="form-label">Full Name</label>
+                                    <input type="text" class="form-control" id="fullName" required>
+                                </div>
+                                <div class="col-md-6 mb-3">
+                                    <label for="age" class="form-label">Age</label>
+                                    <input type="number" class="form-control" id="age" min="1" max="120" required>
+                                </div>
+                            </div>
+                            
+                            <div class="row">
+                                <div class="col-md-6 mb-3">
+                                    <label for="gender" class="form-label">Gender</label>
+                                    <select class="form-select" id="gender" required>
+                                        <option value="" selected disabled>Select</option>
+                                        <option value="male">Male</option>
+                                        <option value="female">Female</option>
+                                        <option value="other">Other</option>
+                                        <option value="prefer-not-to-say">Prefer not to say</option>
+                                    </select>
+                                </div>
+                                <div class="col-md-6 mb-3">
+                                    <label for="contact" class="form-label">Contact Number</label>
+                                    <input type="tel" class="form-control" id="contact" required>
+                                </div>
+                            </div>
+                            
+                            <div class="mb-3">
+                                <label for="medicalHistory" class="form-label">Medical History (Optional)</label>
+                                <textarea class="form-control" id="medicalHistory" rows="3" placeholder="Any pre-existing conditions, medications, allergies, etc."></textarea>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <i class="bi bi-clipboard-check me-2"></i>How can we assist you today?
+                    </div>
+                    <div class="card-body">
+                        <div class="task-option" data-task="symptoms">
+                            <i class="bi bi-activity"></i>
+                            <div>
+                                <h5 class="mb-1">Symptom Checker</h5>
+                                <p class="mb-0 text-muted">Describe your symptoms to get potential causes and guidance</p>
+                            </div>
+                        </div>
+                        
+                        <div class="task-option" data-task="medication">
+                            <i class="bi bi-capsule"></i>
+                            <div>
+                                <h5 class="mb-1">Medication Information</h5>
+                                <p class="mb-0 text-muted">Get information about medications, usage, and potential side effects</p>
+                            </div>
+                        </div>
+                        
+                        <div class="task-option" data-task="health-education">
+                            <i class="bi bi-book"></i>
+                            <div>
+                                <h5 class="mb-1">Health Education</h5>
+                                <p class="mb-0 text-muted">Learn about various health conditions and wellness topics</p>
+                            </div>
+                        </div>
+                        
+                        <div class="task-option" data-task="lifestyle">
+                            <i class="bi bi-heart"></i>
+                            <div>
+                                <h5 class="mb-1">Lifestyle Advice</h5>
+                                <p class="mb-0 text-muted">Get tips on diet, exercise, and healthy living</p>
+                            </div>
+                        </div>
+                        
+                        <div class="task-option" data-task="mental-health">
+                            <i class="bi bi-emoji-smile"></i>
+                            <div>
+                                <h5 class="mb-1">Mental Health Support</h5>
+                                <p class="mb-0 text-muted">Resources and guidance for mental well-being</p>
+                            </div>
+                        </div>
+                        
+                        <div class="task-option" data-task="other">
+                            <i class="bi bi-three-dots"></i>
+                            <div>
+                                <h5 class="mb-1">Other</h5>
+                                <p class="mb-0 text-muted">Any other health-related questions or concerns</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="text-center mt-4">
+                    <button type="button" class="btn btn-primary btn-lg" id="startChatBtn" disabled>
+                        <i class="bi bi-chat-dots me-2"></i>Start Chat with AI Assistant
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <div class="chat-container" id="chatContainer">
+            <div class="chat-header">
+                <div>
+                    <i class="bi bi-robot me-2"></i>
+                    <span>Medical AI Assistant</span>
+                </div>
+                <button class="btn btn-sm btn-light" id="endChatBtn">
+                    <i class="bi bi-x-lg"></i>
+                </button>
+            </div>
+            
+            <div class="chat-messages" id="chatMessages">
+                <div class="message ai">
+                    <div class="message-content">
+                        Hello! I'm your medical AI assistant. I'm here to provide general health information and guidance. Remember, I'm not a substitute for professional medical advice. How can I help you today?
+                    </div>
+                </div>
+            </div>
+            
+            <div class="loading-indicator" id="loadingIndicator">
+                <i class="bi bi-arrow-repeat"></i> AI is thinking...
+            </div>
+            
+            <div class="chat-input-container">
+                <input type="text" class="chat-input" id="chatInput" placeholder="Type your message here...">
+                <input type="file" id="fileInput" style="margin-right:8px;" />
+                <button class="btn btn-outline-secondary" id="uploadBtn" title="Attach file">📎</button>
+                <button class="btn btn-primary" id="sendBtn">
+                    <i class="bi bi-send-fill"></i>
+                </button>
+            </div>
+        </div>
+    </main>
+
+    <footer class="footer">
+        <div class="container text-center">
+            <p class="mb-0">© 2023 Medical AI Assistant. All rights reserved.</p>
+            <p class="mb-0 mt-2">
+                <i class="bi bi-shield-check me-1"></i>
+                Your privacy is important to us. No personal health information is stored.
+            </p>
+        </div>
+    </footer>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // Elements
+            const taskOptions = document.querySelectorAll('.task-option');
+            const startChatBtn = document.getElementById('startChatBtn');
+            const patientForm = document.getElementById('patientForm');
+            const chatContainer = document.getElementById('chatContainer');
+            const endChatBtn = document.getElementById('endChatBtn');
+            const chatInput = document.getElementById('chatInput');
+            const sendBtn = document.getElementById('sendBtn');
+            const chatMessages = document.getElementById('chatMessages');
+            const loadingIndicator = document.getElementById('loadingIndicator');
+            const emergencyAlert = document.getElementById('emergencyAlert');
+            
+            // State
+            let selectedTask = null;
+            let patientInfo = {};
+            
+            // Task selection
+            taskOptions.forEach(option => {
+                option.addEventListener('click', function() {
+                    taskOptions.forEach(opt => opt.classList.remove('selected'));
+                    this.classList.add('selected');
+                    selectedTask = this.dataset.task;
+                    
+                    // Check if form is valid
+                    if (isFormValid()) {
+                        startChatBtn.disabled = false;
+                    }
+                    
+                    // Show emergency alert for symptom checker
+                    if (selectedTask === 'symptoms') {
+                        emergencyAlert.style.display = 'block';
+                    } else {
+                        emergencyAlert.style.display = 'none';
+                    }
+                });
+            });
+            
+            // Form validation
+            function isFormValid() {
+                const fullName = document.getElementById('fullName').value.trim();
+                const age = document.getElementById('age').value.trim();
+                const gender = document.getElementById('gender').value;
+                const contact = document.getElementById('contact').value.trim();
+                
+                return fullName && age && gender && contact && selectedTask;
+            }
+            
+            // Add input event listeners to form fields
+            document.querySelectorAll('#infoForm input, #infoForm select').forEach(field => {
+                field.addEventListener('input', function() {
+                    if (isFormValid()) {
+                        startChatBtn.disabled = false;
+                    } else {
+                        startChatBtn.disabled = true;
+                    }
+                });
+            });
+            
+            // Start chat
+            startChatBtn.addEventListener('click', function() {
+                // Collect patient information
+                patientInfo = {
+                    fullName: document.getElementById('fullName').value.trim(),
+                    age: document.getElementById('age').value.trim(),
+                    gender: document.getElementById('gender').value,
+                    contact: document.getElementById('contact').value.trim(),
+                    medicalHistory: document.getElementById('medicalHistory').value.trim(),
+                    task: selectedTask
+                };
+                
+                // Hide form and show chat
+                patientForm.style.display = 'none';
+                chatContainer.style.display = 'block';
+                
+                // Add initial AI message based on selected task
+                let initialMessage = getInitialMessage(selectedTask);
+                addAIMessage(initialMessage);
+            });
+
+            // Patient login/register flow: ensure a JWT is present for patient actions
+            async function ensurePatientAuth() {
+                let token = sessionStorage.getItem('jwt_token_patient');
+                if (token) return token;
+
+                const isRegistered = confirm('Are you a registered patient? Click OK to login, Cancel to register');
+                if (isRegistered) {
+                    const username = prompt('Enter username');
+                    const password = prompt('Enter password');
+                    if (!username || !password) return null;
+                    const resp = await fetch('/users/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username, password }) });
+                    const j = await resp.json();
+                    if (!resp.ok) { alert('Login failed: ' + (j.error || resp.statusText)); return null; }
+                    sessionStorage.setItem('jwt_token_patient', j.token);
+                    return j.token;
+                } else {
+                    const username = prompt('Choose a username for registration');
+                    const password = prompt('Choose a password');
+                    if (!username || !password) return null;
+                    const resp = await fetch('/users/register', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username, password, role: 'patient' }) });
+                    const j = await resp.json();
+                    if (!resp.ok) { alert('Register failed: ' + (j.error || resp.statusText)); return null; }
+                    alert('Registered successfully. Please login now.');
+                    return await ensurePatientAuth();
+                }
+            }
+            
+            // End chat
+            endChatBtn.addEventListener('click', function() {
+                chatContainer.style.display = 'none';
+                patientForm.style.display = 'block';
+                // Clear chat messages except the first one
+                while (chatMessages.children.length > 1) {
+                    chatMessages.removeChild(chatMessages.lastChild);
+                }
+            });
+            
+            // Send message
+            sendBtn.addEventListener('click', sendMessage);
+            chatInput.addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') {
+                    sendMessage();
+                }
+            });
+            
+            async function sendMessage() {
+                const message = chatInput.value.trim();
+                if (!message) return;
+
+                // Add user message
+                addUserMessage(message);
+                chatInput.value = '';
+
+                // Show loading indicator
+                loadingIndicator.style.display = 'block';
+
+                // Ensure patient is authenticated (JWT)
+                const token = await ensurePatientAuth();
+                if (!token) {
+                    loadingIndicator.style.display = 'none';
+                    addAIMessage('<div class="text-danger">Authentication required to chat.</div>');
+                    return;
+                }
+
+                // Build payload
+                const payload = {
+                    message: message,
+                    patient_info: patientInfo,
+                    session_id: window.__CHAT_SESSION_ID || null
+                };
+
+                try {
+                    const resp = await fetch('/chat', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': 'Bearer ' + token
+                        },
+                        body: JSON.stringify(payload)
+                    });
+
+                    const data = await resp.json();
+                    loadingIndicator.style.display = 'none';
+
+                    if (!resp.ok) {
+                        addAIMessage(`<div class="text-danger">Error: ${data.error || 'Unknown error'}</div>`);
+                        return;
+                    }
+
+                    // Insert AI reply (HTML is returned from server)
+                    addAIMessage(data.reply_html || data.reply_text || '');
+
+                    // Store session id for continued conversation
+                    if (data.session_id) {
+                        window.__CHAT_SESSION_ID = data.session_id;
+                    }
+                } catch (err) {
+                    loadingIndicator.style.display = 'none';
+                    addAIMessage('<div class="text-danger">Network error: could not reach /chat endpoint.</div>');
+                }
+            }
+
+            // Upload attachment for current session
+            document.getElementById('uploadBtn').addEventListener('click', async () => {
+                const fileInput = document.getElementById('fileInput');
+                if (!fileInput.files || !fileInput.files.length) return alert('Choose a file first');
+                const file = fileInput.files[0];
+                const sessionId = window.__CHAT_SESSION_ID;
+                if (!sessionId) return alert('Please start a chat first to create a session.');
+
+                const token = sessionStorage.getItem('jwt_token_patient');
+                if (!token) return alert('You must be logged in as patient to upload files.');
+
+                const form = new FormData();
+                form.append('file', file);
+                form.append('session_id', sessionId);
+
+                try {
+                    const resp = await fetch('/upload', { method: 'POST', headers: { 'Authorization': 'Bearer ' + token }, body: form });
+                    const j = await resp.json();
+                    if (!resp.ok) return alert('Upload failed: ' + (j.error || resp.statusText));
+                    addAIMessage(`<div class="text-success">Attachment uploaded: ${j.original_name}</div>`);
+                    // clear file input
+                    fileInput.value = '';
+                } catch (e) {
+                    alert('Upload error');
+                }
+            });
+            
+            function addUserMessage(message) {
+                const messageElement = document.createElement('div');
+                messageElement.className = 'message user';
+                messageElement.innerHTML = `<div class="message-content">${escapeHtml(message)}</div>`;
+                chatMessages.appendChild(messageElement);
+                chatMessages.scrollTop = chatMessages.scrollHeight;
+            }
+            
+            function addAIMessage(message) {
+                const messageElement = document.createElement('div');
+                messageElement.className = 'message ai';
+                messageElement.innerHTML = `<div class="message-content">${message}</div>`;
+                chatMessages.appendChild(messageElement);
+                chatMessages.scrollTop = chatMessages.scrollHeight;
+            }
+            
+            function getInitialMessage(task) {
+                const messages = {
+                    'symptoms': `Hello ${patientInfo.fullName}! I'm here to help you with your symptoms. Please describe what you're experiencing in detail, including when it started, severity, and any other relevant information. Remember, if you're experiencing severe symptoms, please seek immediate medical attention.`,
+                    'medication': `Hello ${patientInfo.fullName}! I can provide information about medications, including usage instructions, potential side effects, and general information. Please note that I cannot prescribe medication or replace your doctor's advice. What medication would you like to know about?`,
+                    'health-education': `Hello ${patientInfo.fullName}! I'm here to provide health education on various topics. What health condition or topic would you like to learn more about today?`,
+                    'lifestyle': `Hello ${patientInfo.fullName}! I can provide advice on diet, exercise, and healthy living habits. What aspect of lifestyle would you like to discuss today?`,
+                    'mental-health': `Hello ${patientInfo.fullName}! I'm here to provide resources and guidance for mental well-being. Please remember that for serious mental health concerns, it's important to consult with a healthcare professional. How can I support you today?`,
+                    'other': `Hello ${patientInfo.fullName}! I'm here to help with any health-related questions or concerns you might have. What would you like to discuss today?`
+                };
+                
+                return messages[task] || messages['other'];
+            }
+            
+            function checkEmergencyKeywords(message) {
+                const emergencyKeywords = [
+                    'chest pain', 'difficulty breathing', 'severe bleeding', 
+                    'unconscious', 'fainting', 'loss of consciousness',
+                    'severe pain', 'suicidal', 'heart attack', 'stroke',
+                    'emergency', "can't breathe", 'paralysis', 'confusion',
+                    'high fever', 'seizure', 'allergic reaction', 'swelling'
+                ];
+                
+                const lowerMessage = message.toLowerCase();
+                return emergencyKeywords.some(keyword => lowerMessage.includes(keyword));
+            }
+            
+            function getEmergencyResponse() {
+                return `<div class="alert alert-danger">
+                    <i class="bi bi-exclamation-triangle-fill me-2"></i>
+                    <strong>Emergency Warning:</strong> Based on your message, you may be experiencing a medical emergency. Please seek immediate medical attention by:
+                    <ul>
+                        <li>Calling emergency services (911 in the US)</li>
+                        <li>Going to the nearest emergency room</li>
+                        <li>Having someone take you to a doctor immediately</li>
+                    </ul>
+                    Do not wait for a response from this AI system in an emergency situation.
+                </div>`;
+            }
+            
+            function generateSimulatedResponse(message, task) {
+                // This is a placeholder for your actual API call
+                // In a real implementation, you would send the message and patient info to your backend
+                // which would then call the Gemini API
+                
+                const responses = {
+                    'symptoms': `Based on the symptoms you've described, there are several possible conditions that could be causing your discomfort. However, I'm not able to provide a diagnosis. It's important to consult with a healthcare professional who can properly evaluate your condition. In the meantime, you might consider getting adequate rest and staying hydrated. If your symptoms worsen or don't improve in a few days, please seek medical attention.`,
+                    
+                    'medication': `The medication you're asking about is commonly used to treat certain conditions. It's important to take it exactly as prescribed by your healthcare provider. Common side effects may include nausea, dizziness, or headache. Be sure to read the medication guide provided by your pharmacist and ask your doctor or pharmacist if you have any questions. Never share your medication with others or take more than the prescribed dose.`,
+                    
+                    'health-education': `That's an important health topic to learn about. This condition affects many people and can have various impacts on daily life. The most common symptoms include [symptoms]. Treatment options typically include [treatments]. Lifestyle changes such as [changes] can also help manage the condition. For more detailed information, I recommend consulting with a healthcare professional or reputable health resources.`,
+                    
+                    'lifestyle': `Making healthy lifestyle choices can significantly impact your overall well-being. Based on your question, I'd recommend focusing on a balanced diet rich in fruits, vegetables, whole grains, and lean proteins. Regular physical activity, aiming for at least 30 minutes most days of the week, is also important. Additionally, getting adequate sleep (7-9 hours for adults) and managing stress through techniques like meditation or deep breathing can contribute to better health.`,
+                    
+                    'mental-health': `Taking care of your mental health is just as important as your physical health. It's normal to experience ups and downs, but if you're struggling, there are resources available. Consider talking with a trusted friend or family member, practicing self-care activities you enjoy, and maintaining a regular routine. If your feelings persist or worsen, please consider reaching out to a mental health professional who can provide specialized support.`,
+                    
+                    'other': `Thank you for your question. While I can provide general health information, it's important to remember that I'm not a substitute for professional medical advice. For personalized guidance, please consult with a healthcare provider who can take into account your complete medical history and current health status. Is there anything else I can help with in a general capacity?`
+                };
+                
+                return responses[task] || responses['other'];
+            }
+            
+            function escapeHtml(text) {
+                const map = {
+                    '&': '&amp;',
+                    '<': '&lt;',
+                    '>': '&gt;',
+                    '"': '&quot;',
+                    "'": '&#039;'
+                };
+                
+                return text.replace(/[&<>"']/g, m => map[m]);
+            }
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Sign up / Login</title>
+  <style>
+    body{font-family:Arial,Helvetica,sans-serif;margin:24px}
+    .container{max-width:640px;margin:auto}
+    .tabs{display:flex;gap:8px;margin-bottom:12px}
+    .tab{padding:8px 12px;border:1px solid #ccc;border-radius:6px;cursor:pointer}
+    .active{background:#0366d6;color:white}
+    form{border:1px solid #eee;padding:16px;border-radius:8px}
+    label{display:block;margin-top:8px}
+    input,select{width:100%;padding:8px;margin-top:4px}
+    .small{font-size:0.9em;color:#555}
+    .actions{margin-top:12px}
+    .link{color:#0366d6;cursor:pointer}
+    .alert{padding:8px;background:#fdecea;border-radius:6px;color:#611a15}
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h2>Welcome — Sign up or Login</h2>
+    <p class="small">Choose Sign up to create an account, or Login if you already have one. Select your role when registering.</p>
+
+    <div class="tabs">
+      <div id="tab-signup" class="tab active">Sign Up</div>
+      <div id="tab-login" class="tab">Login</div>
+    </div>
+
+    <div id="alert" style="display:none" class="alert"></div>
+
+    <form id="signup-form">
+      <label>Username<input id="su-username" required /></label>
+      <label>Password<input id="su-password" type="password" required /></label>
+      <label>Role
+        <select id="su-role">
+          <option value="patient">Patient</option>
+          <option value="doctor">Doctor</option>
+        </select>
+      </label>
+      <label id="profession-label" style="display:none">Profession (doctors only)
+        <input id="su-profession" placeholder="e.g. obstetrics" />
+      </label>
+      <div class="actions">
+        <button type="button" id="signup-btn">Create account</button>
+      </div>
+      <p class="small">Already have an account? <span id="show-login" class="link">Click to login</span></p>
+    </form>
+
+    <form id="login-form" style="display:none">
+      <label>Username<input id="li-username" required /></label>
+      <label>Password<input id="li-password" type="password" required /></label>
+      <div class="actions">
+        <button type="button" id="login-btn">Login</button>
+      </div>
+      <p class="small">Need an account? <span id="show-signup" class="link">Create one</span></p>
+    </form>
+
+    <hr />
+    <p class="small">For testing: if you already have a dev API key flow, you can still use it by providing the `X-API-KEY` header in API requests.</p>
+  </div>
+
+<script>
+const $ = (id)=>document.getElementById(id)
+const alertBox = $('alert')
+function showAlert(msg){ alertBox.style.display='block'; alertBox.textContent = msg }
+function clearAlert(){ alertBox.style.display='none'; alertBox.textContent = '' }
+
+// Tabs
+$('tab-signup').onclick = ()=>{ $('tab-signup').classList.add('active'); $('tab-login').classList.remove('active'); $('signup-form').style.display='block'; $('login-form').style.display='none'; }
+$('tab-login').onclick = ()=>{ $('tab-login').classList.add('active'); $('tab-signup').classList.remove('active'); $('signup-form').style.display='none'; $('login-form').style.display='block'; }
+$('show-login').onclick = ()=>$('tab-login').onclick()
+$('show-signup').onclick = ()=>$('tab-signup').onclick()
+
+// show profession input only for doctors
+$('su-role').onchange = (e)=>{
+  if(e.target.value === 'doctor') $('profession-label').style.display = 'block'; else $('profession-label').style.display = 'none';
+}
+
+async function apiPost(path, body){
+  const res = await fetch(path, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
+  const j = await res.json().catch(()=>({error:'Invalid JSON response'}));
+  return {status: res.status, body: j}
+}
+
+$('signup-btn').onclick = async ()=>{
+  clearAlert();
+  const username = $('su-username').value.trim();
+  const password = $('su-password').value;
+  const role = $('su-role').value;
+  const profession = $('su-profession').value.trim();
+  if(!username || !password){ showAlert('username and password required'); return }
+  const {status, body} = await apiPost('/users/register', {username, password, role, profession});
+  if(status === 200){
+    // auto-login after signup
+    const loginRes = await apiPost('/users/login', {username, password});
+    if(loginRes.status === 200 && loginRes.body.token){
+      sessionStorage.setItem('jwt_token', loginRes.body.token);
+      sessionStorage.setItem('user_role', loginRes.body.role);
+      // redirect based on role
+      if(loginRes.body.role === 'doctor') window.location.href = '/doctor'; else window.location.href = '/dashboard.html';
+      return;
+    }
+    showAlert('Created account but auto-login failed. Please log in.');
+  } else {
+    showAlert(body.error || 'Could not create account')
+  }
+}
+
+$('login-btn').onclick = async ()=>{
+  clearAlert();
+  const username = $('li-username').value.trim();
+  const password = $('li-password').value;
+  if(!username || !password){ showAlert('username and password required'); return }
+  const {status, body} = await apiPost('/users/login', {username, password});
+  if(status === 200 && body.token){
+    sessionStorage.setItem('jwt_token', body.token);
+    sessionStorage.setItem('user_role', body.role);
+    if(body.role === 'doctor') window.location.href = '/doctor'; else window.location.href = '/dashboard.html';
+    return;
+  }
+  showAlert(body.error || 'Login failed')
+}
+
+// If already logged in, redirect immediately
+(function checkExisting(){
+  const t = sessionStorage.getItem('jwt_token');
+  const r = sessionStorage.getItem('user_role');
+  if(t && r){ if(r === 'doctor') window.location.href = '/doctor'; else window.location.href = '/dashboard.html'; }
+})();
+</script>
+</body>
+</html>
