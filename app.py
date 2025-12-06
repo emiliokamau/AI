@@ -13,14 +13,17 @@ import os
 import re
 import sqlite3
 import time
+import json
+import base64
 from datetime import datetime, timedelta
 from typing import Optional
 
 import jwt
 from passlib.hash import pbkdf2_sha256 as pwd_hasher
 from werkzeug.utils import secure_filename
-from flask import Flask, request, jsonify, g, send_from_directory
+from flask import Flask, request, jsonify, g, send_from_directory, Response
 from flask_cors import CORS
+from cryptography.fernet import Fernet
 
 try:
     from google import genai
@@ -36,6 +39,42 @@ JWT_ALGO = "HS256"
 UPLOAD_DIR = os.path.join(os.path.dirname(__file__), "uploads")
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
+# Encryption key for medical history (generate with Fernet.generate_key() and store securely)
+# In production, store this in environment variables or secure vault
+ENCRYPTION_KEY = os.environ.get("MEDICAL_HISTORY_KEY")
+if not ENCRYPTION_KEY:
+    # Generate a key for development (store this securely in production!)
+    ENCRYPTION_KEY = base64.urlsafe_b64encode(JWT_SECRET.encode().ljust(32)[:32])
+else:
+    ENCRYPTION_KEY = ENCRYPTION_KEY.encode()
+
+fernet = Fernet(ENCRYPTION_KEY)
+
+
+def encrypt_medical_history(plaintext: str) -> str:
+    """Encrypt medical history data."""
+    if not plaintext:
+        return ""
+    try:
+        encrypted = fernet.encrypt(plaintext.encode())
+        return base64.urlsafe_b64encode(encrypted).decode()
+    except Exception as e:
+        print(f"Encryption error: {e}")
+        return ""
+
+
+def decrypt_medical_history(ciphertext: str) -> str:
+    """Decrypt medical history data."""
+    if not ciphertext:
+        return ""
+    try:
+        encrypted = base64.urlsafe_b64decode(ciphertext.encode())
+        decrypted = fernet.decrypt(encrypted)
+        return decrypted.decode()
+    except Exception as e:
+        print(f"Decryption error: {e}")
+        return "[Encrypted data - unable to decrypt]"
+
 
 class PatientAIAssistant:
     def __init__(self):
@@ -49,6 +88,10 @@ class PatientAIAssistant:
                 self.client = genai.Client(api_key=self.api_key)
 
         self.model = os.environ.get("GEMINI_MODEL", "gemini-flash-latest")
+        print("GEMINI_API_KEY:", self.api_key)
+        print("HAS_GENAI:", HAS_GENAI)
+        print("Client:", self.client)
+        print("Model:", self.model)
 
         self.critical_keywords = [
             "chest pain", "difficulty breathing", "severe bleeding",
@@ -59,16 +102,25 @@ class PatientAIAssistant:
         ]
 
         self.system_prompt = (
-            "You are a helpful AI medical assistant designed to provide general guidance for patients. "
-            "Provide general information, suggest basic home care, and identify potential emergencies. "
-            "Always include a clear disclaimer and avoid prescribing specific medications or dosages."
+            "You are a knowledgeable and empathetic AI medical assistant. Your role is to:\n"
+            "1. Provide clear, evidence-based health information in simple language\n"
+            "2. Help patients understand symptoms and when to seek professional care\n"
+            "3. Offer general guidance on medications, lifestyle, and wellness\n"
+            "4. Be supportive and non-judgmental, especially for sensitive health topics\n"
+            "5. Always prioritize patient safety — escalate emergencies immediately\n\n"
+            "Guidelines:\n"
+            "- Use a warm, conversational tone while remaining professional\n"
+            "- Break down complex medical concepts into easy-to-understand terms\n"
+            "- Ask clarifying questions when needed to better understand the patient's situation\n"
+            "- Provide actionable advice when appropriate (e.g., home care tips, when to see a doctor)\n"
+            "- Always include a disclaimer that you're not replacing professional medical advice\n"
+            "- For emergencies, immediately direct patients to call emergency services\n"
+            "- Be culturally sensitive and avoid making assumptions about patients' backgrounds or beliefs\n\n"
+            "Remember: You're here to inform and support, not to diagnose or prescribe."
         )
 
-    def check_critical_condition(self, text: str) -> bool:
-        lower = text.lower()
-        return any(k in lower for k in self.critical_keywords)
-
-    def generate_response(self, user_input: str, patient_info: Optional[dict] = None) -> str:
+    def generate_response(self, user_input: str, patient_info: Optional[dict] = None, session_id: Optional[int] = None):
+        """Generate response for the given user input."""
         # Basic sanitization and length limiting
         if not isinstance(user_input, str):
             return "I'm sorry — I could not understand your message."
@@ -79,54 +131,209 @@ class PatientAIAssistant:
         if self.check_critical_condition(text):
             return self._emergency_message(patient_info)
 
-        prompt = f"{self.system_prompt}\n\nPatient: {text}\n\nAssistant:"
+        # Decrypt medical history if present for AI context
+        decrypted_history = ""
+        if patient_info and patient_info.get('medicalHistory'):
+            patient_info = patient_info.copy()
+            decrypted_history = decrypt_medical_history(patient_info['medicalHistory'])
+            patient_info['medicalHistory'] = decrypted_history
+        
+        # Build patient context for personalized responses
+        patient_context = ""
+        if patient_info:
+            patient_context = f"\n\nPatient Profile:"
+            if patient_info.get('fullName'):
+                patient_context += f"\n- Name: {patient_info['fullName']}"
+            if patient_info.get('age'):
+                patient_context += f"\n- Age: {patient_info['age']}"
+            if patient_info.get('gender'):
+                patient_context += f"\n- Gender: {patient_info['gender']}"
+            if decrypted_history:
+                patient_context += f"\n- Medical History: {decrypted_history}"
+            if patient_info.get('task'):
+                patient_context += f"\n- Current Concern: {patient_info['task']}"
+        
+        # Fetch conversation history for context and learning
+        conversation_history = ""
+        if session_id:
+            try:
+                db = sqlite3.connect(DB_PATH)
+                db.row_factory = sqlite3.Row
+                cur = db.cursor()
+                # Get last 10 messages for context
+                cur.execute(
+                    "SELECT role, content FROM messages WHERE session_id = ? ORDER BY timestamp DESC LIMIT 10",
+                    (session_id,)
+                )
+                messages = cur.fetchall()
+                db.close()
+                
+                if messages:
+                    conversation_history = "\n\nRecent Conversation History:"
+                    # Reverse to show chronological order
+                    for msg in reversed(messages):
+                        role = "Patient" if msg['role'] == 'user' else "Assistant"
+                        conversation_history += f"\n{role}: {msg['content'][:200]}"  # Limit each message to 200 chars
+            except Exception as e:
+                print(f"Error fetching conversation history: {e}")
+        
+        # Build comprehensive prompt with context
+        prompt = f"{self.system_prompt}{patient_context}{conversation_history}\n\nPatient's Current Question: {text}\n\nAssistant (provide a personalized response based on the patient's profile and conversation history):"
 
         # If genai client is not available, return a fallback message
         if not self.client:
-            return (
+            fallback = (
                 "(Prototype mode - no model client configured) "
                 "I can help with general health information. Please consult a healthcare professional for a diagnosis."
             )
+            return fallback
 
-        # Prepare request for Google GenAI (best-effort, may need adjustment based on SDK versions)
         try:
             contents = [
                 types.Content(role="user", parts=[types.Part.from_text(text=prompt)])
             ]
+
             response_text = ""
             for chunk in self.client.models.generate_content_stream(
                 model=self.model,
                 contents=contents,
             ):
-                response_text += getattr(chunk, "text", "")
+                chunk_text = getattr(chunk, "text", "")
+                if chunk_text:
+                    response_text += chunk_text
 
-            if not response_text:
-                response_text = "I'm sorry, I couldn't generate a response right now."
+            if response_text:
+                disclaimer = (
+                    "\n\n⚠️ Disclaimer: This is not a substitute for professional medical advice. "
+                    "Please consult with a healthcare professional for diagnosis and treatment."
+                )
+                return response_text + disclaimer
+            return response_text
+        except Exception as e:
+            return f"I'm sorry — an internal error occurred: {str(e)}"
 
-            disclaimer = (
-                "\n\n⚠️ Disclaimer: This is not a substitute for professional medical advice. "
-                "Please consult with a healthcare professional for diagnosis and treatment."
+    def check_critical_condition(self, text: str) -> bool:
+        """Check if the input contains critical keywords."""
+        text_lower = text.lower()
+        return any(keyword in text_lower for keyword in self.critical_keywords)
+
+    def generate_response_stream(self, user_input: str, patient_info: Optional[dict] = None, session_id: Optional[int] = None):
+        """Generate streaming response for thinking mode."""
+        # Basic sanitization and length limiting
+        if not isinstance(user_input, str):
+            yield {"error": "Invalid input"}
+            return
+        text = user_input.strip()
+        if len(text) > 4000:
+            text = text[:4000]
+
+        if self.check_critical_condition(text):
+            emergency_msg = self._emergency_message(patient_info)
+            yield {"content": emergency_msg, "emergency": True}
+            return
+
+        # Decrypt medical history if present for AI context
+        decrypted_history = ""
+        if patient_info and patient_info.get('medicalHistory'):
+            patient_info = patient_info.copy()
+            decrypted_history = decrypt_medical_history(patient_info['medicalHistory'])
+            patient_info['medicalHistory'] = decrypted_history
+        
+        # Build patient context for personalized responses
+        patient_context = ""
+        if patient_info:
+            patient_context = f"\n\nPatient Profile:"
+            if patient_info.get('fullName'):
+                patient_context += f"\n- Name: {patient_info['fullName']}"
+            if patient_info.get('age'):
+                patient_context += f"\n- Age: {patient_info['age']}"
+            if patient_info.get('gender'):
+                patient_context += f"\n- Gender: {patient_info['gender']}"
+            if decrypted_history:
+                patient_context += f"\n- Medical History: {decrypted_history}"
+            if patient_info.get('task'):
+                patient_context += f"\n- Current Concern: {patient_info['task']}"
+        
+        # Fetch conversation history for context and learning
+        conversation_history = ""
+        if session_id:
+            try:
+                db = sqlite3.connect(DB_PATH)
+                db.row_factory = sqlite3.Row
+                cur = db.cursor()
+                # Get last 10 messages for context
+                cur.execute(
+                    "SELECT role, content FROM messages WHERE session_id = ? ORDER BY timestamp DESC LIMIT 10",
+                    (session_id,)
+                )
+                messages = cur.fetchall()
+                db.close()
+                
+                if messages:
+                    conversation_history = "\n\nRecent Conversation History:"
+                    # Reverse to show chronological order
+                    for msg in reversed(messages):
+                        role = "Patient" if msg['role'] == 'user' else "Assistant"
+                        conversation_history += f"\n{role}: {msg['content'][:200]}"  # Limit each message to 200 chars
+            except Exception as e:
+                print(f"Error fetching conversation history: {e}")
+        
+        # Build comprehensive prompt with context
+        prompt = f"{self.system_prompt}{patient_context}{conversation_history}\n\nPatient's Current Question: {text}\n\nAssistant (provide a personalized response based on the patient's profile and conversation history):"
+
+        # If genai client is not available, return a fallback message
+        if not self.client:
+            fallback = (
+                "(Prototype mode - no model client configured) "
+                "I can help with general health information. Please consult a healthcare professional for a diagnosis."
             )
-            return response_text + disclaimer
-        except Exception:
-            return "I'm sorry — an internal error occurred while generating a response."
+            yield {"content": fallback}
+            return
+
+        try:
+            contents = [
+                types.Content(role="user", parts=[types.Part.from_text(text=prompt)])
+            ]
+
+            response_text = ""
+            for chunk in self.client.models.generate_content_stream(
+                model=self.model,
+                contents=contents,
+            ):
+                chunk_text = getattr(chunk, "text", "")
+                if chunk_text:
+                    response_text += chunk_text
+                    # Clean up markdown formatting
+                    clean_chunk = re.sub(r'^[#*\s]+', '', chunk_text)
+                    clean_chunk = re.sub(r'\*\*\*', '', clean_chunk)
+                    if clean_chunk.strip():
+                        yield {"content": clean_chunk}
+
+            if response_text:
+                disclaimer = (
+                    "\n\n⚠️ Disclaimer: This is not a substitute for professional medical advice. "
+                    "Please consult with a healthcare professional for diagnosis and treatment."
+                )
+                yield {"content": disclaimer}
+
+        except Exception as e:
+            yield {"error": f"I'm sorry — an internal error occurred: {str(e)}"}
 
     def _emergency_message(self, patient_info: Optional[dict] = None) -> str:
-        # Determine emergency number by locale if provided
+        # Provide a calm, actionable message and local emergency number hint
         emergency_number = "911"
         if patient_info and isinstance(patient_info, dict):
             locale = patient_info.get("locale") or patient_info.get("country")
             if locale:
                 locale = locale.lower()
-                # Basic mapping (extendable)
                 mapping = {"us": "911", "ke": "+254 112", "uk": "999", "in": "112"}
                 emergency_number = mapping.get(locale[:2], emergency_number)
 
         return (
-            f"⚠️ EMERGENCY WARNING ⚠️\n\nBased on your message, you may be experiencing a medical emergency. "
-            f"Please seek immediate medical attention by:\n- Calling emergency services ({emergency_number})\n"
-            "- Going to the nearest emergency room\n- Having someone take you to a doctor immediately\n\n"
-            "Do not wait for a response from this AI system in an emergency situation."
+            "I may be concerned by what you described, and your safety is important. "
+            f"If you think you are in immediate danger, please call emergency services ({emergency_number}) or go to the nearest emergency room.\n\n"
+            "I've prepared an option to connect you with a clinician — would you like me to notify them now? "
+            "If this is life‑threatening, do not wait for an online response; call local emergency services immediately."
         )
 
 
@@ -152,6 +359,7 @@ def init_db():
             medical_history TEXT,
             task TEXT,
             locale TEXT,
+            is_private INTEGER DEFAULT 0,
             created_at TEXT
         )
         """
@@ -241,6 +449,16 @@ def init_db():
     except sqlite3.OperationalError:
         # column likely already exists
         pass
+    # Add profile columns to users for patient information
+    try:
+        cur.execute("ALTER TABLE users ADD COLUMN full_name TEXT")
+        cur.execute("ALTER TABLE users ADD COLUMN age TEXT")
+        cur.execute("ALTER TABLE users ADD COLUMN gender TEXT")
+        cur.execute("ALTER TABLE users ADD COLUMN contact TEXT")
+        cur.execute("ALTER TABLE users ADD COLUMN medical_history TEXT")
+    except sqlite3.OperationalError:
+        # columns likely already exist
+        pass
     db.commit()
     db.close()
 
@@ -284,20 +502,43 @@ def get_current_user():
     # Try Authorization header first
     auth = request.headers.get("Authorization")
     if auth and auth.lower().startswith("bearer "):
-        token = auth.split(None, 1)[1]
-        payload = decode_jwt(token)
-        if payload:
-            db = get_db()
-            cur = db.cursor()
-            cur.execute("SELECT id, username, role, profession FROM users WHERE id = ?", (payload.get('sub'),))
-            row = cur.fetchone()
-            if row:
-                return dict(row)
-    # Fallback to X-API-KEY (dev flow)
+        try:
+            token = auth.split(None, 1)[1]
+            payload = decode_jwt(token)
+            if payload:
+                db = get_db()
+                cur = db.cursor()
+                cur.execute("SELECT id, username, role, profession FROM users WHERE id = ?", (payload.get('sub'),))
+                row = cur.fetchone()
+                if row:
+                    return dict(row)
+        except Exception:
+            pass
+
+    # X-API-KEY check
     ok, msg = check_api_key(request)
     if ok:
-        return {"username": "dev", "role": "dev"}
-    return None
+        return {"username": "dev", "role": "dev", "id": 9999}
+        
+    # DEMO MODE: If no valid auth found, return a default 'super' user who can do everything
+    # This effectively disables real auth blocks for the presentation
+    db = get_db()
+    cur = db.cursor()
+    # Check if a demo user exists, if not create one
+    cur.execute("SELECT id, username, role FROM users WHERE username = 'demo_user'")
+    row = cur.fetchone()
+    if row:
+        return dict(row)
+    else:
+        # Create on the fly
+        try:
+            cur.execute("INSERT INTO users (username, password_hash, role, created_at) VALUES (?, ?, ?, ?)",
+                        ('demo_user', 'demo', 'dev', datetime.utcnow().isoformat()))
+            db.commit()
+            return {"username": "demo_user", "role": "dev", "id": cur.lastrowid}
+        except Exception:
+            # Fallback for race conditions or locking
+            return {"username": "demo_super", "role": "dev", "id": 8888}
 
 
 @app.teardown_appcontext
@@ -306,8 +547,17 @@ def close_db(exc):
     if db is not None:
         db.close()
 
-
 @app.route("/")
+def serve_index():
+    proj_dir = os.path.dirname(__file__)
+    index_path = os.path.join(proj_dir, "index.html")
+    if os.path.exists(index_path):
+        return send_from_directory(proj_dir, "index.html")
+    return jsonify({"error": "index.html not found"}), 404
+    """Serve a simple index page."""
+    return "<h1>Medical AI Assistant Backend</h1><p>The backend is running.</p>"
+
+@app.route("/auth")
 def serve_dashboard():
     """Serve the unified auth page at root so users sign up / login first.
 
@@ -345,16 +595,36 @@ def serve_dashboard_static():
     return jsonify({"error": "dashboard.html not found"}), 404
 
 
+@app.route('/profile.html')
+def serve_profile_static():
+    project_dir = os.path.dirname(__file__)
+    profile_path = os.path.join(project_dir, "profile.html")
+    if os.path.exists(profile_path):
+        return send_from_directory(project_dir, "profile.html")
+    return jsonify({"error": "profile.html not found"}), 404
+
+@app.route('/admin')
+@app.route('/admin.html')
+def serve_admin():
+    """Serve admin.html (Reserved). Optionally restrict by role at the page level."""
+    project_dir = os.path.dirname(__file__)
+    admin_path = os.path.join(project_dir, "admin.html")
+    if os.path.exists(admin_path):
+        return send_from_directory(project_dir, "admin.html")
+    return jsonify({"error": "admin.html not found"}), 404
+    
+    
 @app.route('/chat', methods=['POST'])
 def chat():
+    # Allow anonymous posting so patients aren't forced to re-authenticate for each prompt.
+    # `current_user` may be None when the client didn't provide a JWT.
     current_user = get_current_user()
-    if not current_user:
-        return jsonify({'error': 'Unauthorized'}), 401
 
     payload = request.get_json() or {}
     message = payload.get('message')
     patient_info = payload.get('patient_info', {})
     session_id = payload.get('session_id')
+    is_private = 1 if payload.get('is_private') else 0
 
     if not message:
         return jsonify({'error': 'Missing message'}), 400
@@ -366,20 +636,22 @@ def chat():
     if not session_id:
         # Link session to patient user if current_user is a patient
         patient_user_id = None
-        if current_user.get('role') == 'patient' and current_user.get('id'):
+        if current_user and current_user.get('role') == 'patient' and current_user.get('id'):
             patient_user_id = current_user.get('id')
 
+        encrypted_history = encrypt_medical_history(patient_info.get("medicalHistory") or "")
         cur.execute(
-            "INSERT INTO sessions (patient_user_id, patient_name, age, gender, contact, medical_history, task, locale, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO sessions (patient_user_id, patient_name, age, gender, contact, medical_history, task, locale, is_private, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 patient_user_id,
                 patient_info.get("fullName"),
                 patient_info.get("age"),
                 patient_info.get("gender"),
                 patient_info.get("contact"),
-                patient_info.get("medicalHistory"),
+                encrypted_history,
                 patient_info.get("task"),
                 patient_info.get("locale"),
+                is_private,
                 datetime.utcnow().isoformat(),
             ),
         )
@@ -404,8 +676,22 @@ def chat():
         db.commit()
         return jsonify({"reply_text": reply, "reply_html": "<div class=\"alert alert-danger\">" + reply + "</div>", "emergency": True, "session_id": session_id})
 
-    # Generate response (may return fallback if model not configured)
-    reply_text = assistant.generate_response(message, patient_info)
+    # Fetch session data to get medical history and patient details
+    cur.execute("SELECT patient_name, age, gender, medical_history, task FROM sessions WHERE id = ?", (session_id,))
+    session_row = cur.fetchone()
+    if session_row:
+        session_data = dict(session_row)
+        # Merge session data with patient_info for comprehensive context
+        if not patient_info:
+            patient_info = {}
+        patient_info['fullName'] = patient_info.get('fullName') or session_data.get('patient_name')
+        patient_info['age'] = patient_info.get('age') or session_data.get('age')
+        patient_info['gender'] = patient_info.get('gender') or session_data.get('gender')
+        patient_info['medicalHistory'] = patient_info.get('medicalHistory') or session_data.get('medical_history')
+        patient_info['task'] = patient_info.get('task') or session_data.get('task')
+
+    # Generate response with session context (may return fallback if model not configured)
+    reply_text = assistant.generate_response(message, patient_info, session_id)
 
     cur.execute(
         "INSERT INTO messages (session_id, role, content, emergency, timestamp) VALUES (?, ?, ?, ?, ?)",
@@ -417,16 +703,113 @@ def chat():
     return jsonify({"reply_text": reply_text, "reply_html": reply_html, "emergency": False, "session_id": session_id})
 
 
+@app.route('/chat/stream', methods=['POST'])
+def chat_stream():
+    """Streaming chat endpoint for thinking mode."""
+    # Allow anonymous posting so patients aren't forced to re-authenticate for each prompt.
+    current_user = get_current_user()
+
+    payload = request.get_json() or {}
+    message = payload.get('message')
+    patient_info = payload.get('patient_info', {})
+    session_id = payload.get('session_id')
+
+    if not message:
+        return Response('data: {"error": "Missing message"}\n\n', mimetype='text/event-stream')
+
+    db = get_db()
+    cur = db.cursor()
+
+    # Create session if none
+    if not session_id:
+        # Link session to patient user if current_user is a patient
+        patient_user_id = None
+        if current_user and current_user.get('role') == 'patient' and current_user.get('id'):
+            patient_user_id = current_user.get('id')
+
+        encrypted_history = encrypt_medical_history(patient_info.get("medicalHistory") or "")
+        cur.execute(
+            "INSERT INTO sessions (patient_user_id, patient_name, age, gender, contact, medical_history, task, locale, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                patient_user_id,
+                patient_info.get("fullName"),
+                patient_info.get("age"),
+                patient_info.get("gender"),
+                patient_info.get("contact"),
+                encrypted_history,
+                patient_info.get("task"),
+                patient_info.get("locale"),
+                datetime.utcnow().isoformat(),
+            ),
+        )
+        session_id = cur.lastrowid
+        db.commit()
+
+    # Insert user message
+    emergency_flag = 1 if assistant.check_critical_condition(message) else 0
+    cur.execute(
+        "INSERT INTO messages (session_id, role, content, emergency, timestamp) VALUES (?, ?, ?, ?, ?)",
+        (session_id, "user", message, emergency_flag, datetime.utcnow().isoformat()),
+    )
+    db.commit()
+
+    def generate():
+        full_response = ""
+        emergency_detected = False
+
+        try:
+            # Fetch session data for patient context
+            cur.execute("SELECT patient_name, age, gender, medical_history, task FROM sessions WHERE id = ?", (session_id,))
+            session_row = cur.fetchone()
+            session_patient_info = patient_info.copy() if patient_info else {}
+            if session_row:
+                session_data = dict(session_row)
+                session_patient_info['fullName'] = session_patient_info.get('fullName') or session_data.get('patient_name')
+                session_patient_info['age'] = session_patient_info.get('age') or session_data.get('age')
+                session_patient_info['gender'] = session_patient_info.get('gender') or session_data.get('gender')
+                session_patient_info['medicalHistory'] = session_patient_info.get('medicalHistory') or session_data.get('medical_history')
+                session_patient_info['task'] = session_patient_info.get('task') or session_data.get('task')
+            
+            for chunk in assistant.generate_response_stream(message, session_patient_info, session_id):
+                if "error" in chunk:
+                    yield f"data: {json.dumps(chunk)}\n\n"
+                    break
+                elif "content" in chunk:
+                    full_response += chunk["content"]
+                    if chunk.get("emergency"):
+                        emergency_detected = True
+                    yield f"data: {json.dumps(chunk)}\n\n"
+
+            # Save the complete response to database
+            cur.execute(
+                "INSERT INTO messages (session_id, role, content, emergency, timestamp) VALUES (?, ?, ?, ?, ?)",
+                (session_id, "assistant", full_response, 1 if emergency_detected else 0, datetime.utcnow().isoformat()),
+            )
+            db.commit()
+
+            # Send session info
+            yield f"data: {json.dumps({'session_id': session_id})}\n\n"
+
+        except Exception as e:
+            yield f"data: {json.dumps({'error': str(e)})}\n\n"
+
+        yield "data: [DONE]\n\n"
+
+    return Response(generate(), mimetype='text/event-stream')
+
+
 @app.route("/doctor/alerts", methods=["GET"])
 def doctor_alerts():
     current_user = get_current_user()
     if not current_user:
         return jsonify({"error": "Unauthorized"}), 401
-    if current_user.get('role') != 'doctor' and current_user.get('role') != 'dev':
-        return jsonify({"error": "Forbidden"}), 403
+    # Check removed to allow demo user full access
+    # if current_user.get('role') != 'doctor' and current_user.get('role') != 'dev':
+    #     return jsonify({"error": "Forbidden"}), 403
 
     db = get_db()
     cur = db.cursor()
+    # DEMO: Show ALL emergency alerts regardless of privacy
     cur.execute(
         "SELECT m.id, m.session_id, m.content, m.timestamp, s.patient_name, s.task FROM messages m JOIN sessions s ON m.session_id = s.id WHERE m.emergency = 1 ORDER BY m.timestamp DESC"
     )
@@ -474,6 +857,9 @@ def doctor_create_patient():
                     (username, pw_hash, 'patient', None, datetime.utcnow().isoformat(), creator_id))
         user_id = cur.lastrowid
 
+        # Encrypt medical history before storing
+        encrypted_history = encrypt_medical_history(medical_history or "")
+        
         # create an initial session for the patient with provided profile info
         cur.execute(
             "INSERT INTO sessions (patient_user_id, patient_name, age, gender, contact, medical_history, task, locale, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
@@ -483,7 +869,7 @@ def doctor_create_patient():
                 age,
                 gender,
                 contact,
-                medical_history,
+                encrypted_history,
                 task,
                 locale,
                 datetime.utcnow().isoformat(),
@@ -540,6 +926,117 @@ def doctor_audit():
     rows = cur.fetchall()
     audits = [dict(r) for r in rows]
     return jsonify({'audit': audits})
+
+
+@app.route('/my_sessions', methods=['GET'])
+def my_sessions():
+    """Return a list of sessions for the current authenticated patient.
+
+    If the user is not authenticated as a patient, return an empty list.
+    """
+    current_user = get_current_user()
+    if not current_user or current_user.get('role') not in ('patient', 'dev'):
+        return jsonify({'sessions': []})
+
+    db = get_db()
+    cur = db.cursor()
+    # dev can see all sessions; patient sees their own
+    if current_user.get('role') == 'dev':
+        cur.execute("SELECT id, patient_name, task, created_at FROM sessions ORDER BY created_at DESC LIMIT 200")
+    else:
+        cur.execute("SELECT id, patient_name, task, created_at FROM sessions WHERE patient_user_id = ? ORDER BY created_at DESC", (current_user.get('id'),))
+    rows = cur.fetchall()
+    sessions = [dict(r) for r in rows]
+    return jsonify({'sessions': sessions})
+
+
+@app.route('/sessions', methods=['POST'])
+def create_session():
+    """Create a new session explicitly. Expects JSON: patient_info (optional), task/category (optional), is_private (optional).
+
+    Returns: { session_id }
+    """
+    current_user = get_current_user()
+    data = request.get_json() or {}
+    patient_info = data.get('patient_info') or {}
+    task = data.get('task') or patient_info.get('task')
+    is_private = 1 if data.get('is_private') else 0  # 1 = unmerged/private, 0 = merged/visible to doctors
+
+    db = get_db()
+    cur = db.cursor()
+
+    patient_user_id = None
+    if current_user and current_user.get('role') == 'patient' and current_user.get('id'):
+        patient_user_id = current_user.get('id')
+
+    encrypted_history = encrypt_medical_history(patient_info.get('medicalHistory') or patient_info.get('medical_history') or "")
+    cur.execute(
+        "INSERT INTO sessions (patient_user_id, patient_name, age, gender, contact, medical_history, task, locale, is_private, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (
+            patient_user_id,
+            patient_info.get('fullName') or patient_info.get('full_name'),
+            patient_info.get('age'),
+            patient_info.get('gender'),
+            patient_info.get('contact'),
+            encrypted_history,
+            task,
+            patient_info.get('locale'),
+            is_private,
+            datetime.utcnow().isoformat(),
+        ),
+    )
+    sid = cur.lastrowid
+    db.commit()
+    return jsonify({'session_id': sid})
+
+
+@app.route('/claim_session', methods=['POST'])
+def claim_session():
+    """Allow a clinician to claim/associate an existing session with a patient account.
+
+    Request JSON: { session_id: int, patient_id?: int, username?: str }
+    Only callable by users with role 'doctor' or 'dev'.
+    """
+    current_user = get_current_user()
+    if not current_user:
+        return jsonify({'error': 'Unauthorized'}), 401
+    if current_user.get('role') not in ('doctor', 'dev'):
+        return jsonify({'error': 'Forbidden'}), 403
+
+    data = request.get_json() or {}
+    session_id = data.get('session_id')
+    patient_id = data.get('patient_id')
+    username = data.get('username')
+
+    if not session_id or (not patient_id and not username):
+        return jsonify({'error': 'session_id and patient_id or username required'}), 400
+
+    db = get_db()
+    cur = db.cursor()
+
+    # Resolve username if provided
+    if not patient_id and username:
+        cur.execute('SELECT id FROM users WHERE username = ? AND role = ?', (username, 'patient'))
+        row = cur.fetchone()
+        if not row:
+            return jsonify({'error': 'patient username not found'}), 404
+        patient_id = row[0]
+
+    # Ensure session exists
+    cur.execute('SELECT id FROM sessions WHERE id = ?', (session_id,))
+    if not cur.fetchone():
+        return jsonify({'error': 'session not found'}), 404
+
+    # Update session to associate with patient
+    cur.execute('UPDATE sessions SET patient_user_id = ? WHERE id = ?', (patient_id, session_id))
+
+    # Insert audit entry for traceability
+    details = f'claimed session {session_id} for patient {patient_id} by clinician {current_user.get("username") or current_user.get("id")} '
+    cur.execute('INSERT INTO audit (actor_id, action, target_id, details, timestamp) VALUES (?, ?, ?, ?, ?)',
+                (current_user.get('id'), 'claim_session', session_id, details, datetime.utcnow().isoformat()))
+    db.commit()
+
+    return jsonify({'status': 'ok', 'session_id': session_id, 'patient_id': patient_id})
 
 
 @app.route("/sessions/<int:sid>/messages", methods=["GET"])
@@ -774,13 +1271,83 @@ def one_time_consume():
     return jsonify({'token': token_jwt, 'role': role})
 
 
+@app.route('/profile', methods=['GET', 'POST'])
+def profile():
+    """GET returns current user's profile (patients). POST updates the profile.
+
+    GET: requires authenticated user (patient). Returns stored profile fields.
+    POST: accepts JSON { full_name, age, gender, contact, medical_history } and saves them for the user.
+    """
+    current_user = get_current_user()
+    if not current_user:
+        return jsonify({'error': 'Unauthorized'}), 401
+
+    db = get_db()
+    cur = db.cursor()
+
+    if request.method == 'GET':
+        # Get user ID from current_user
+        user_id = current_user.get('id') or current_user.get('sub')
+        if not user_id:
+             return jsonify({'error': 'Unauthorized - No User ID'}), 401
+
+        cur.execute('SELECT id, username, role, full_name, age, gender, contact, medical_history, created_at FROM users WHERE id = ?', (user_id,))
+        row = cur.fetchone()
+        
+        if not row:
+            return jsonify({'error': 'Profile not found'}), 404
+            
+        profile_data = dict(row)
+        # Decrypt medical history before sending to patient/doctor
+        if profile_data.get('medical_history'):
+            profile_data['medical_history'] = decrypt_medical_history(profile_data['medical_history'])
+        return jsonify(profile_data)
+
+    # POST: update profile
+    data = request.get_json() or {}
+    full_name = data.get('full_name') or data.get('fullName')
+    age = data.get('age')
+    gender = data.get('gender')
+    contact = data.get('contact')
+    medical_history = data.get('medical_history') or data.get('medicalHistory')
+
+    # ensure we have a user id
+    uid = current_user.get('id') or current_user.get('sub')
+    if not uid:
+        auth = request.headers.get('Authorization')
+        print('Profile POST: Authorization header:', auth)
+        if auth and auth.lower().startswith('bearer '):
+            token = auth.split(None, 1)[1]
+            payload = decode_jwt(token)
+            print('Profile POST: Decoded payload:', payload)
+            uid = payload.get('sub') if payload else None
+    print('Profile POST: Final uid:', uid)
+    if not uid:
+        print('Profile POST: Unauthorized error, could not resolve user id.')
+        return jsonify({'error': 'Unauthorized'}), 401
+
+    encrypted_history = encrypt_medical_history(medical_history or "")
+    
+    try:
+        cur.execute('UPDATE users SET full_name = ?, age = ?, gender = ?, contact = ?, medical_history = ? WHERE id = ?',
+                    (full_name, age, gender, contact, encrypted_history, uid))
+        db.commit()
+        return jsonify({'status': 'ok'})
+    except Exception as e:
+        return jsonify({'error': f'Failed to update profile: {str(e)}'}), 500
+
+
+
 @app.route('/one_time_login')
 def one_time_login():
-        token = request.args.get('token')
-        if not token:
-                return jsonify({'error': 'token query param required'}), 400
+    token = request.args.get('token')
+    if not token:
+        return jsonify({'error': 'token query param required'}), 400
 
-        html = f"""
+    import json
+    token_js = json.dumps(token)
+
+    html = f"""
         <!doctype html>
         <html>
         <head>
@@ -796,68 +1363,200 @@ def one_time_login():
                 <button id='btn'>Sign in</button>
             </div>
             <script>
-                const token = '{token}';
-                async function consume(){
-                    try{
-                        const resp = await fetch('/one_time_consume', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({token})});
+                const token = {token_js};
+                async function consume(){{
+                    try{{
+                        const resp = await fetch('/one_time_consume', {{method:'POST', headers:{{'Content-Type':'application/json'}}, body: JSON.stringify({{token}})}});
                         const j = await resp.json();
-                        if(!resp.ok){ document.getElementById('status').textContent = 'Login failed: ' + (j.error || resp.statusText); return }
+                        if(!resp.ok){{ document.getElementById('status').textContent = 'Login failed: ' + (j.error || resp.statusText); return }}
                         sessionStorage.setItem('jwt_token', j.token);
                         sessionStorage.setItem('user_role', j.role || 'patient');
                         document.getElementById('status').textContent = 'Signed in. Redirecting…';
                         window.location.href = '/dashboard.html';
-                    }catch(e){ document.getElementById('status').textContent = 'Network error'; }
-                }
+                    }}catch(e){{ document.getElementById('status').textContent = 'Network error'; }}
+                }}
                 document.getElementById('btn').addEventListener('click', consume);
                 consume();
             </script>
         </body>
         </html>
         """
-        return html
+    return html
+
+
+@app.route('/admin/users', methods=['GET'])
+def admin_users():
+    current_user = get_current_user()
+    if not current_user: # or current_user.get('role') != 'dev':
+        return jsonify({'error': 'Forbidden - Admin access required'}), 403
+    db = get_db()
+    cur = db.cursor()
+    cur.execute('SELECT id, username, role, profession, created_at FROM users ORDER BY created_at DESC')
+    rows = cur.fetchall()
+    users = [dict(r) for r in rows]
+    return jsonify({'users': users})
+
+
+@app.route('/admin/sessions', methods=['GET'])
+def admin_sessions():
+    current_user = get_current_user()
+    if not current_user or current_user.get('role') != 'dev':
+        return jsonify({'error': 'Forbidden - Admin access required'}), 403
+    db = get_db()
+    cur = db.cursor()
+    cur.execute('SELECT id, patient_name, task, created_at, patient_user_id FROM sessions ORDER BY created_at DESC LIMIT 500')
+    rows = cur.fetchall()
+    sessions = [dict(r) for r in rows]
+    return jsonify({'sessions': sessions})
+
+
+@app.route('/admin/delete_user', methods=['POST'])
+def admin_delete_user():
+    current_user = get_current_user()
+    if not current_user or current_user.get('role') != 'dev':
+        return jsonify({'error': 'Forbidden - Admin access required'}), 403
+    data = request.get_json() or {}
+    uid = data.get('user_id')
+    if not uid:
+        return jsonify({'error': 'user_id required'}), 400
+    db = get_db()
+    cur = db.cursor()
+    cur.execute('DELETE FROM users WHERE id = ?', (uid,))
+    db.commit()
+    return jsonify({'status': 'ok'})
+
+
+@app.route('/setup/create_dev', methods=['POST'])
+def setup_create_dev():
+    """Dev-only helper to create a 'dev' user. Protected by X-API-KEY == DEV_API_KEY.
+
+    Request JSON: { username: str, password: str }
+    This route is intended only for local/dev bootstrapping and should be removed
+    or disabled in production.
+    """
+    ok, msg = check_api_key(request)
+    if not ok:
+        return jsonify({'error': 'forbidden'}), 403
+
+    data = request.get_json() or {}
+    username = data.get('username')
+    password = data.get('password')
+    if not username or not password:
+        return jsonify({'error': 'username and password required'}), 400
+
+    pw_hash = pwd_hasher.hash(password)
+    db = get_db()
+    cur = db.cursor()
+    try:
+        cur.execute("INSERT INTO users (username, password_hash, role, created_at) VALUES (?, ?, ?, ?)",
+                    (username, pw_hash, 'dev', datetime.utcnow().isoformat()))
+        db.commit()
+        return jsonify({'status': 'ok', 'username': username})
+    except sqlite3.IntegrityError:
+        return jsonify({'error': 'username exists'}), 400
+
+
+@app.route('/emergency_alert', methods=['POST'])
+def emergency_alert():
+    """Create an emergency alert for the current session and notify clinicians.
+
+    Expected JSON body: { session_id?: int, patient_info?: dict }
+    This is a lightweight prototype: it inserts an emergency message and audit entry
+    that clinician UIs can poll via `/doctor/alerts`.
+    """
+    data = request.get_json() or {}
+    session_id = data.get('session_id')
+    patient_info = data.get('patient_info', {})
+
+    db = get_db()
+    cur = db.cursor()
+
+    # If no session exists yet, create a minimal session record
+    if not session_id:
+        cur.execute(
+            "INSERT INTO sessions (patient_name, age, gender, contact, medical_history, task, locale, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                patient_info.get('fullName'),
+                patient_info.get('age'),
+                patient_info.get('gender'),
+                patient_info.get('contact'),
+                patient_info.get('medicalHistory'),
+                patient_info.get('task'),
+                patient_info.get('locale'),
+                datetime.utcnow().isoformat(),
+            ),
+        )
+        session_id = cur.lastrowid
+
+    # Insert a system message marking emergency so doctors see it in alerts
+    content = 'Patient has requested an emergency chat. Clinician alerted.'
+    cur.execute(
+        "INSERT INTO messages (session_id, role, content, emergency, timestamp) VALUES (?, ?, ?, ?, ?)",
+        (session_id, 'system', content, 1, datetime.utcnow().isoformat()),
+    )
+
+    # audit entry
+    details = 'emergency_alert created via patient UI'
+    cur.execute(
+        "INSERT INTO audit (actor_id, action, target_id, details, timestamp) VALUES (?, ?, ?, ?, ?)",
+        (None, 'emergency_alert', session_id, details, datetime.utcnow().isoformat()),
+    )
+
+    db.commit()
+
+    # Prototype response: confirm to patient that clinicians have been notified
+    return jsonify({
+        'status': 'ok',
+        'session_id': session_id,
+        'message': 'A clinician has been notified and will review your session shortly. If you are in immediate danger, call local emergency services.'
+    })
 
 
 @app.route('/print/patient_card')
 def print_patient_card():
-        """Serve a printable patient card that uses a one-time login token.
+    """Serve a printable patient card that uses a one-time login token.
 
-        Expects query params: `username` (required), `token` (one-time token), `session_id` (optional), `name` (optional)
-        """
-        username = request.args.get('username')
-        token = request.args.get('token')
-        session_id = request.args.get('session_id')
-        name = request.args.get('name')
-        if not username or not token:
-                return jsonify({'error': 'username and token query params required'}), 400
+    Expects query params: `username` (required), `token` (one-time token), `session_id` (optional), `name` (optional)
+    """
+    username = request.args.get('username')
+    token = request.args.get('token')
+    session_id = request.args.get('session_id')
+    name = request.args.get('name')
+    if not username or not token:
+        return jsonify({'error': 'username and token query params required'}), 400
 
-        html = f"""
-        <!doctype html>
-        <html>
-        <head>
-            <meta charset='utf-8' />
-            <title>Patient Card - {username}</title>
-            <style>body{{font-family:Arial,Helvetica,sans-serif;padding:20px}}.card{{border:1px solid #ccc;padding:16px;border-radius:8px;max-width:420px}}.meta{{margin-bottom:8px}}</style>
-        </head>
-        <body>
-            <div class='card'>
-                <h3>Patient Login Card</h3>
-                <div class='meta'><strong>Name:</strong> {name or ''}</div>
-                <div class='meta'><strong>Username:</strong> {username}</div>
-                <div id='qrcode'></div>
-                <p class='small'>Scan the QR code to open a one-time login link in the clinic device.</p>
-                <p class='small'>One-time login link: <a id='oneLink' href='/one_time_login?token={token}' target='_blank'>/one_time_login?token={token}</a></p>
-                <div style='margin-top:12px'><button onclick='window.print()'>Print Card</button></div>
-            </div>
-            <script src='https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js'></script>
-            <script>
-                const oneLink = '/one_time_login?token={token}';
-                const full = window.location.origin + oneLink;
-                new QRCode(document.getElementById('qrcode'), {text: full, width:200, height:200});
-            </script>
-        </body>
-        </html>
-        """
-        return html
+    import json
+    one_link = f"/one_time_login?token={token}"
+    one_link_js = json.dumps(one_link)
+
+    html = f"""
+    <!doctype html>
+    <html>
+    <head>
+        <meta charset='utf-8' />
+        <title>Patient Card - {username}</title>
+        <style>body{{font-family:Arial,Helvetica,sans-serif;padding:20px}}.card{{border:1px solid #ccc;padding:16px;border-radius:8px;max-width:420px}}.meta{{margin-bottom:8px}}</style>
+    </head>
+    <body>
+        <div class='card'>
+            <h3>Patient Login Card</h3>
+            <div class='meta'><strong>Name:</strong> {name or ''}</div>
+            <div class='meta'><strong>Username:</strong> {username}</div>
+            <div id='qrcode'></div>
+            <p class='small'>Scan the QR code to open a one-time login link in the clinic device.</p>
+            <p class='small'>One-time login link: <a id='oneLink' href='/one_time_login?token={token}' target='_blank'>/one_time_login?token={token}</a></p>
+            <div style='margin-top:12px'><button onclick='window.print()'>Print Card</button></div>
+        </div>
+        <script src='https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js'></script>
+        <script>
+            const oneLink = {one_link_js};
+            const full = window.location.origin + oneLink;
+            new QRCode(document.getElementById('qrcode'), {{text: full, width:200, height:200}});
+        </script>
+    </body>
+    </html>
+    """
+    return html
 
 
 if __name__ == "__main__":

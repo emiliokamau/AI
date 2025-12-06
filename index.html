@@ -1,0 +1,408 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Medical AI Assistant — Smart, Safe Health Guidance</title>
+  <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css">
+  <link rel="stylesheet" href="/static/styles.css">
+  <style>
+    body {
+      background: linear-gradient(180deg, #f6fbff 0%, #ffffff 60%);
+    }
+
+    .hero {
+      padding: 5rem 0 4rem;
+    }
+
+    .hero-card {
+      border-radius: 24px;
+      box-shadow: 0 20px 60px rgba(13, 110, 253, 0.12);
+      background: white;
+      padding: 3rem;
+      overflow: hidden;
+      position: relative;
+    }
+
+    .hero-card::before {
+      content: '';
+      position: absolute;
+      top: -50%;
+      right: -10%;
+      width: 300px;
+      height: 300px;
+      background: radial-gradient(circle, rgba(13, 110, 253, 0.05) 0%, transparent 70%);
+      border-radius: 50%;
+    }
+
+    .feature {
+      min-height: 160px;
+      border-left: 3px solid var(--primary-light);
+      transition: all 0.3s ease;
+    }
+
+    .feature:hover {
+      border-left-color: var(--primary);
+    }
+
+    .principle {
+      background: linear-gradient(135deg, #f8f9ff 0%, #e3f2fd 100%);
+      border-radius: 12px;
+      padding: 16px;
+    }
+
+    .cta {
+      margin-top: 2rem;
+    }
+
+    .meta-pill {
+      font-size: .85rem;
+      padding: .35rem .75rem;
+      border-radius: 999px;
+      background: rgba(13, 110, 253, 0.1);
+      color: #0d6efd;
+      font-weight: 600;
+      letter-spacing: 0.5px;
+    }
+
+    footer {
+      margin-top: 5rem;
+      padding: 2.5rem 0;
+      color: #6b7280;
+      background: #f8f9fa;
+    }
+
+    .inspect-box {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, 'Roboto Mono', monospace;
+      word-break: break-all;
+      font-size: 0.85rem;
+    }
+
+    .navbar {
+      padding: 1.25rem 0;
+      background: rgba(255, 255, 255, 0.95) !important;
+      backdrop-filter: blur(10px);
+      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+    }
+
+    .illustration-wrapper {
+      position: relative;
+    }
+
+    .illustration-bg {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: 400px;
+      height: 400px;
+      background: radial-gradient(circle, rgba(13, 110, 253, 0.08) 0%, transparent 70%);
+      border-radius: 50%;
+      animation: pulse 4s ease-in-out infinite;
+    }
+
+    .stat-box {
+      padding: 1.5rem;
+      border-radius: 12px;
+      transition: all 0.3s ease;
+    }
+
+    .stat-box:hover {
+      transform: translateY(-5px);
+    }
+
+    /* Dark mode styles */
+    body.dark-mode {
+      background: linear-gradient(180deg, #1a1a2e 0%, #0f0f1e 60%);
+      color: #e0e0e0;
+    }
+
+    body.dark-mode .navbar {
+      background: rgba(20, 20, 30, 0.95) !important;
+    }
+
+    body.dark-mode .hero-card {
+      background: #1e1e2e;
+      color: #e0e0e0;
+    }
+
+    body.dark-mode .card {
+      background: #1e1e2e;
+      color: #e0e0e0;
+    }
+
+    body.dark-mode .principle {
+      background: linear-gradient(135deg, #1a1a2e 0%, #252535 100%);
+    }
+
+    body.dark-mode footer {
+      background: #1a1a2e;
+      color: #8e8e9e;
+    }
+
+    body.dark-mode .text-muted {
+      color: #a0a0b0 !important;
+    }
+  </style>
+</head>
+
+<body>
+  <nav class="navbar navbar-expand-lg navbar-light bg-white fixed-top px-4">
+    <div class="container">
+      <a class="navbar-brand d-flex align-items-center" href="/">
+        <img src="/static/logo.svg" alt="Medical AI Assistant Logo" class="logo-img me-2">
+        <span class="fw-bold">Medical AI Assistant</span>
+      </a>
+      <div class="d-flex gap-3 align-items-center">
+        <button id="darkModeToggle" class="btn btn-outline-secondary btn-sm" title="Toggle dark mode">
+          <i class="bi bi-moon-fill"></i>
+        </button>
+        <a class="btn btn-outline-primary btn-sm" href="auth">Open Patient Dashboard</a>
+        <a class="btn btn-outline-secondary btn-sm" href="admin.html">Reserved</a>
+      </div>
+    </div>
+  </nav>
+
+  <header class="hero" style="margin-top: 76px;">
+    <div class="container">
+      <div class="hero-card row align-items-center gx-5 fade-in">
+        <div class="col-lg-7">
+          <div class="mb-3"><span class="meta-pill"><i class="bi bi-shield-check me-1"></i>BETA • Healthy life to
+              all</span></div>
+          <h1 class="display-5 fw-bold" style="line-height: 1.2;">Fast, private, and trustworthy AI support for everyday
+            health questions</h1>
+          <p class="lead mt-3">Ask about symptoms, medication guidance, lifestyle advice, or get mental-health
+            resources. Connect with a clinician instantly when urgent — or use it as a thoughtful, accountable health
+            assistant between visits.</p>
+          <div class="cta d-flex gap-2">
+            <a href="dashboard.html" class="btn btn-primary btn-lg">Try a Health Chat</a>
+            <a href="dashboard.html" class="btn btn-outline-primary btn-lg">See Demo Conversations</a>
+          </div>
+        </div>
+        <div class="col-lg-5 text-center d-none d-lg-block illustration-wrapper">
+          <div class="illustration-bg"></div>
+          <!-- simple SVG illustration -->
+          <svg width="280" height="220" viewBox="0 0 280 220" fill="none" xmlns="http://www.w3.org/2000/svg"
+            class="float-animation" style="position: relative; z-index: 2;">
+            <rect x="0" y="0" width="280" height="220" rx="18" fill="#f8fbff" />
+            <g transform="translate(28,26)">
+              <rect x="0" y="0" width="196" height="28" rx="6" fill="#0d6efd" opacity="0.08" />
+              <rect x="0" y="44" width="196" height="18" rx="6" fill="#cfe5ff" />
+              <circle cx="24" cy="100" r="18" fill="#fff" stroke="#e6f0ff" />
+              <rect x="60" y="86" width="120" height="24" rx="6" fill="#fff" stroke="#e6f0ff" />
+            </g>
+          </svg>
+          <!-- Clinical analytics carousel -->
+          <div id="clinicCarousel" class="carousel slide mt-4" data-bs-ride="carousel" data-bs-interval="4000"
+            style="position: relative; z-index: 2;">
+            <div class="carousel-inner rounded shadow">
+              <div class="carousel-item active">
+                <img src="/static/hero-clinic-analytics.jpg.png" class="d-block w-100"
+                  alt="Medical dashboard with health analytics" loading="lazy" />
+              </div>
+              <div class="carousel-item">
+                <img src="/static/hero-clinic-analytics.jpg.png" class="d-block w-100"
+                  alt="Doctor explaining AI analytics to patient" loading="lazy" />
+              </div>
+              <div class="carousel-item">
+                <img src="/static/hero-clinic-analytics.jpg.png" class="d-block w-100"
+                  alt="Clinical charts and organ visuals" loading="lazy" />
+              </div>
+            </div>
+            <button class="carousel-control-prev" type="button" data-bs-target="#clinicCarousel" data-bs-slide="prev">
+              <span class="carousel-control-prev-icon" aria-hidden="true"></span>
+              <span class="visually-hidden">Previous</span>
+            </button>
+            <button class="carousel-control-next" type="button" data-bs-target="#clinicCarousel" data-bs-slide="next">
+              <span class="carousel-control-next-icon" aria-hidden="true"></span>
+              <span class="visually-hidden">Next</span>
+            </button>
+          </div>
+          <div class="small text-muted mt-2">Example clinical analytics interfaces for demonstration.</div>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <main class="container">
+    <!-- Stats Section -->
+    <section class="row text-center py-5 fade-in-delay-1" style="margin-bottom: 3rem;">
+      <div class="col-md-4">
+        <div class="stat-box">
+          <h2 class="display-4 fw-bold text-primary mb-0" data-target="1000">0</h2>
+          <p class="text-muted mb-0">Conversations</p>
+        </div>
+      </div>
+      <div class="col-md-4">
+        <div class="stat-box">
+          <h2 class="display-4 fw-bold text-success mb-0" data-target="98">0</h2>
+          <p class="text-muted mb-0">% Satisfaction</p>
+        </div>
+      </div>
+      <div class="col-md-4">
+        <div class="stat-box">
+          <h2 class="display-4 fw-bold text-info mb-0" data-target="24">0</h2>
+          <p class="text-muted mb-0">7 Availability</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="row g-4 fade-in-delay-1">
+      <div class="col-md-4">
+        <div class="card p-3 feature">
+          <h5><i class="bi bi-activity me-2 text-primary"></i>What it does</h5>
+          <p class="small">Conversational health guidance: symptom triage, medication information, health education,
+            mental-health signposting, and lifestyle coaching. Designed to help you prepare for clinical visits and make
+            safer choices between visits.</p>
+        </div>
+      </div>
+      <div class="col-md-4">
+        <div class="card p-3 feature">
+          <h5><i class="bi bi-shield-check me-2 text-success"></i>How it protects you</h5>
+          <p class="small">Session-based privacy, JWT-backed accounts, clinician escalation for emergencies, and audit
+            logs for clinician review. We keep sensitive data confined to per-session stores and require clinician
+            approval for escalations.</p>
+        </div>
+      </div>
+      <div class="col-md-4">
+        <div class="card p-3 feature">
+          <h5><i class="bi bi-people me-2 text-info"></i>When to use it</h5>
+          <p class="small">Not a replacement for emergency care — use it for general questions, medication info, and to
+            get help deciding whether to seek clinical care. For emergencies the app will prompt clinician review and
+            recommend calling emergency services first.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="row mt-5 fade-in-delay-2">
+      <div class="col-lg-8">
+        <h4>Governing Principles</h4>
+        <ul class="mt-2">
+          <li><strong>Safety first:</strong> The system warns and escalates for emergency keywords and directs users to
+            call emergency services when indicated.</li>
+          <li><strong>Clinician oversight:</strong> Clinicians can review flagged sessions and claim sessions before any
+            clinical decisions are made.</li>
+          <li><strong>Privacy by design:</strong> Session isolation, optional authenticated accounts, and minimal
+            persistent logging required for audit and safety.</li>
+          <li><strong>Transparent limitations:</strong> The assistant provides non-diagnostic, educational information
+            and always recommends professional evaluation for clinical decisions.</li>
+        </ul>
+      </div>
+      <div class="col-lg-4">
+        <div class="card p-3 principle">
+          <h6 class="mb-2">Quick facts</h6>
+          <p class="small mb-1"><strong>Model:</strong> Configurable — prototype uses a fallback when no model key is
+            set.</p>
+          <p class="small mb-1"><strong>Escalation:</strong> Emergency category triggers clinician alert.</p>
+          <p class="small mb-0"><strong>Auth:</strong> JWT for admin/clinician workflows.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="row mt-5">
+      <div class="col-md-6">
+        <h5>Try it out</h5>
+        <p class="small">Click the button to launch a patient chat. You can create separate conversations by selecting
+          different help categories in the chat UI.</p>
+        <div class="d-flex gap-2">
+          <a class="btn btn-primary" href="dashboard.html">Start a Chat</a>
+          <a class="btn btn-outline-secondary" href="dashboard.html">See Examples</a>
+        </div>
+      </div>
+      <div class="col-md-6">
+        <h5>Session debug</h5>
+        <p class="small">Click the button below to reveal current `sessionStorage` values in your browser (only visible
+          to you). Use this to confirm which account/token is active.</p>
+        <div class="d-flex gap-2">
+          <button id="inspectBtn" class="btn btn-sm btn-outline-dark">Inspect Session Storage</button>
+          <button id="copyBtn" class="btn btn-sm btn-outline-primary">Copy values</button>
+        </div>
+        <pre id="inspectOut" style="margin-top:10px;display:none;" class="inspect-box bg-light p-2 rounded small"></pre>
+      </div>
+    </section>
+  </main>
+
+  <footer class="container text-center">
+    <small>Prototype — not for clinical decision making. For research/demo only.</small>
+  </footer>
+
+  <script>
+    // Dark mode toggle
+    const darkModeToggle = document.getElementById('darkModeToggle');
+    const isDark = localStorage.getItem('darkMode') === 'true';
+    if (isDark) {
+      document.body.classList.add('dark-mode');
+      darkModeToggle.innerHTML = '<i class="bi bi-sun-fill"></i>';
+    }
+    darkModeToggle.addEventListener('click', () => {
+      document.body.classList.toggle('dark-mode');
+      const dark = document.body.classList.contains('dark-mode');
+      localStorage.setItem('darkMode', dark);
+      darkModeToggle.innerHTML = dark ? '<i class="bi bi-sun-fill"></i>' : '<i class="bi bi-moon-fill"></i>';
+    });
+
+    // Animated counter
+    function animateCounter(element) {
+      const target = parseInt(element.getAttribute('data-target'));
+      const duration = 2000;
+      const increment = target / (duration / 16);
+      let current = 0;
+      const timer = setInterval(() => {
+        current += increment;
+        if (current >= target) {
+          element.textContent = target;
+          clearInterval(timer);
+        } else {
+          element.textContent = Math.floor(current);
+        }
+      }, 16);
+    }
+
+    // Trigger counter animation on scroll
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          const counters = entry.target.querySelectorAll('[data-target]');
+          counters.forEach(counter => animateCounter(counter));
+          observer.unobserve(entry.target);
+        }
+      });
+    }, { threshold: 0.5 });
+
+    const statsSection = document.querySelector('.row.text-center.py-5');
+    if (statsSection) observer.observe(statsSection);
+
+    document.getElementById('inspectBtn').addEventListener('click', () => {
+      try {
+        const token = sessionStorage.getItem('jwt_token');
+        const role = sessionStorage.getItem('user_role');
+        const patientToken = sessionStorage.getItem('jwt_token_patient');
+        const out = {
+          jwt_token: token,
+          jwt_token_patient: patientToken,
+          user_role: role
+        };
+        const el = document.getElementById('inspectOut');
+        el.style.display = 'block';
+        el.textContent = JSON.stringify(out, null, 2);
+      } catch (e) {
+        alert('Unable to read sessionStorage');
+      }
+    });
+    document.getElementById('copyBtn').addEventListener('click', async () => {
+      try {
+        const token = sessionStorage.getItem('jwt_token');
+        const role = sessionStorage.getItem('user_role');
+        const patientToken = sessionStorage.getItem('jwt_token_patient');
+        const text = JSON.stringify({ jwt_token: token, jwt_token_patient: patientToken, user_role: role }, null, 2);
+        await navigator.clipboard.writeText(text);
+        alert('Session values copied to clipboard. Paste them here if you want me to inspect.');
+      } catch (e) { alert('Copy failed — please open devtools and run: sessionStorage.getItem("jwt_token")'); }
+    });
+  </script>
+</body>
+
+</html>

@@ -1,5 +1,9 @@
 Flask>=2.0.0
 flask-cors>=3.0.10
-google-genai>=0.0.0
-PyJWT>=2.0.0
+google-genai>=1.52.0
+google-auth>=2.43.0
+PyJWT>=2.10.1
 passlib>=1.7.4
+Werkzeug>=2.0.0
+cryptography>=41.0.0
+python-dotenv>=1.0.0

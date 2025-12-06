@@ -1,0 +1,266 @@
+<!doctype html>
+<html>
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Admin - Medical AI Assistant</title>
+  <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css">
+  <style>
+    /* Admin collapsible sidebar styles */
+    #sidebar {
+      position: fixed;
+      left: 0;
+      top: 72px;
+      bottom: 0;
+      width: 220px;
+      background: #f8f9fa;
+      border-right: 1px solid #e9ecef;
+      padding: 12px;
+      overflow: auto;
+      z-index: 1050;
+      transition: width .22s ease;
+    }
+
+    #sidebar.collapsed {
+      width: 64px !important;
+    }
+
+    #sidebar .labels {
+      display: inline-block;
+    }
+
+    #sidebar.collapsed .labels {
+      display: none;
+    }
+
+    #mainContent {
+      transition: margin-left .22s ease;
+      margin-left: 240px;
+    }
+
+    #mainContent.collapsed {
+      margin-left: 88px !important;
+    }
+
+    #fixedToggleBtn {
+      position: fixed;
+      left: 12px;
+      top: 84px;
+      z-index: 1100;
+    }
+
+    /* Responsive: convert sidebar to overlay and stack controls */
+    @media (max-width: 768px) {
+      #sidebar {
+        transform: translateX(-100%);
+        width: 220px !important;
+      }
+
+      #sidebar.show {
+        transform: translateX(0);
+      }
+
+      #mainContent,
+      #mainContent.collapsed {
+        margin-left: 0 !important;
+      }
+
+      .d-flex.gap-2 .btn,
+      .btn-group .btn {
+        width: 100%;
+      }
+    }
+  </style>
+</head>
+
+<body class="p-3">
+  <script>
+    // Redirect non-dev users away from admin UI early
+    // Redirect logic removed to allow login from this page
+    // (function(){...})(); removed
+  </script>
+  <button id="fixedToggleBtn" class="btn btn-outline-secondary" title="Toggle sidebar"><i
+      class="bi bi-list"></i></button>
+  <div id="sidebarOverlay" style="position:fixed;inset:0;background:rgba(0,0,0,0.35);z-index:1049;display:none;"></div>
+  <div id="sidebar">
+    <div class="mb-3">
+      <button class="btn btn-sm btn-outline-secondary w-100 mb-2 labels" id="adminHomeBtn">Home</button>
+      <button class="btn btn-sm btn-outline-secondary w-100 mb-2 labels" id="adminUsersBtn">Users</button>
+      <button class="btn btn-sm btn-outline-secondary w-100 mb-2 labels" id="adminSessionsBtn">Sessions</button>
+    </div>
+  </div>
+  <div class="container">
+    <div id="mainContent">
+      <div class="d-flex justify-content-between align-items-center mb-3">
+        <div class="d-flex align-items-center gap-2">
+          <img src="/static/logo.svg" alt="Logo" style="width: 40px; height: 40px;">
+          <h3 class="mb-0">Admin Dashboard</h3>
+        </div>
+        <div id="adminControls">
+          <button id="logoutBtn" class="btn btn-sm btn-outline-secondary">Logout</button>
+        </div>
+      </div>
+
+      <div id="loginArea" class="mb-3">
+        <div class="card p-3" style="max-width:420px">
+          <h5>Admin Login</h5>
+          <div class="mb-2">
+            <input id="adminUser" class="form-control form-control-sm" placeholder="username" />
+          </div>
+          <div class="mb-2">
+            <input id="adminPass" type="password" class="form-control form-control-sm" placeholder="password" />
+          </div>
+          <div class="d-flex gap-2">
+            <button id="adminLoginBtn" class="btn btn-sm btn-primary">Sign in</button>
+            <button id="adminClearBtn" class="btn btn-sm btn-outline-secondary">Clear</button>
+          </div>
+          <div id="loginMsg" class="small text-danger mt-2" style="display:none"></div>
+        </div>
+      </div>
+
+      <div id="actionsArea" class="mb-3" style="display:none">
+        <button id="loadUsersBtn" class="btn btn-primary btn-sm">Load Users</button>
+        <button id="loadSessionsBtn" class="btn btn-secondary btn-sm">Load Sessions</button>
+      </div>
+
+      <div id="usersArea" class="mb-4"></div>
+      <div id="sessionsArea" class="mb-4"></div>
+    </div>
+  </div>
+
+  <script>
+    // Helper to show message
+    function showLoginMsg(text, isError = true) {
+      const el = document.getElementById('loginMsg');
+      el.style.display = text ? 'block' : 'none';
+      el.textContent = text || '';
+      el.className = isError ? 'small text-danger mt-2' : 'small text-success mt-2';
+    }
+
+    async function validateToken(token) {
+      if (!token) return false;
+      try {
+        const resp = await fetch('/admin/users', { headers: { 'Authorization': 'Bearer ' + token } });
+        return resp.ok;
+      } catch (e) { return false }
+    }
+
+    async function updateUiForAuth(signedIn) {
+      const actions = document.getElementById('actionsArea');
+      const loginArea = document.getElementById('loginArea');
+      const adminControls = document.getElementById('adminControls');
+      if (signedIn) {
+        actions.style.display = 'block';
+        loginArea.style.display = 'none';
+        adminControls.style.display = 'block';
+      } else {
+        actions.style.display = 'none';
+        loginArea.style.display = 'block';
+        adminControls.style.display = 'none';
+      }
+    }
+
+    // On load, check for existing token
+    (async () => {
+      const token = sessionStorage.getItem('jwt_token');
+      if (token) {
+        const ok = await validateToken(token);
+        if (ok) {
+          await updateUiForAuth(true);
+        } else {
+          sessionStorage.removeItem('jwt_token');
+          await updateUiForAuth(false);
+        }
+      } else {
+        await updateUiForAuth(false);
+      }
+    })();
+
+    document.getElementById('adminClearBtn').addEventListener('click', () => {
+      document.getElementById('adminUser').value = '';
+      document.getElementById('adminPass').value = '';
+      showLoginMsg('', '');
+    });
+
+    document.getElementById('adminLoginBtn').addEventListener('click', async () => {
+      const user = document.getElementById('adminUser').value.trim();
+      const pass = document.getElementById('adminPass').value;
+      if (!user || !pass) { showLoginMsg('username and password required'); return }
+      try {
+        const resp = await fetch('/users/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: user, password: pass }) });
+        const j = await resp.json();
+        if (!resp.ok) { showLoginMsg(j.error || 'login failed'); return }
+        if (!j.role || j.role !== 'dev') {
+          showLoginMsg('account does not have admin privileges (role dev required)');
+          return;
+        }
+        sessionStorage.setItem('jwt_token', j.token);
+        sessionStorage.setItem('user_role', j.role || 'dev');
+        showLoginMsg('signed in', false);
+        await updateUiForAuth(true);
+      } catch (e) { showLoginMsg('network error') }
+    });
+
+    document.getElementById('logoutBtn').addEventListener('click', () => { sessionStorage.removeItem('jwt_token'); sessionStorage.removeItem('jwt_token_patient'); sessionStorage.removeItem('user_role'); location.href = '/index.html'; });
+
+    document.getElementById('loadUsersBtn').addEventListener('click', async () => {
+      const token = sessionStorage.getItem('jwt_token');
+      const resp = await fetch('/admin/users', { headers: { 'Authorization': 'Bearer ' + token } });
+      const j = await resp.json();
+      const el = document.getElementById('usersArea');
+      if (!resp.ok) { el.innerHTML = '<div class="alert alert-danger">' + (j.error || 'failed') + '</div>'; return }
+      // render a simple table
+      let html = '<h5>Users</h5>';
+      html += '<table class="table table-sm"><thead><tr><th>id</th><th>username</th><th>role</th><th>created_at</th></tr></thead><tbody>';
+      (j.users || []).forEach(u => { html += `<tr><td>${u.id}</td><td>${u.username}</td><td>${u.role}</td><td>${u.created_at || ''}</td></tr>` });
+      html += '</tbody></table>';
+      el.innerHTML = html;
+    });
+
+    document.getElementById('loadSessionsBtn').addEventListener('click', async () => {
+      const token = sessionStorage.getItem('jwt_token');
+      const resp = await fetch('/admin/sessions', { headers: { 'Authorization': 'Bearer ' + token } });
+      const j = await resp.json();
+      const el = document.getElementById('sessionsArea');
+      if (!resp.ok) { el.innerHTML = '<div class="alert alert-danger">' + (j.error || 'failed') + '</div>'; return }
+      let html = '<h5>Sessions</h5>';
+      html += '<table class="table table-sm"><thead><tr><th>id</th><th>patient</th><th>task</th><th>created_at</th><th>patient_user_id</th></tr></thead><tbody>';
+      (j.sessions || []).forEach(s => { html += `<tr><td>${s.id}</td><td>${s.patient_name || ''}</td><td>${s.task || ''}</td><td>${s.created_at || ''}</td><td>${s.patient_user_id || ''}</td></tr>` });
+      html += '</tbody></table>';
+      el.innerHTML = html;
+    });
+
+    // Sidebar toggle wiring and initial state for admin page
+    (function () {
+      const fixedToggleBtn = document.getElementById('fixedToggleBtn');
+      const sidebar = document.getElementById('sidebar');
+      const mainEl = document.getElementById('mainContent');
+      try { const collapsed = sessionStorage.getItem('sidebar_collapsed') === '1'; if (collapsed) { sidebar.classList.add('collapsed'); mainEl.classList.add('collapsed'); } } catch (e) { }
+      fixedToggleBtn?.addEventListener('click', () => {
+        if (window.innerWidth <= 768) {
+          const overlay = document.getElementById('sidebarOverlay');
+          const isOpen = sidebar.classList.contains('show');
+          if (isOpen) { sidebar.classList.remove('show'); overlay.style.display = 'none'; }
+          else { sidebar.classList.add('show'); overlay.style.display = 'block'; }
+        } else {
+          sidebar.classList.toggle('collapsed');
+          mainEl.classList.toggle('collapsed');
+          try { sessionStorage.setItem('sidebar_collapsed', sidebar.classList.contains('collapsed') ? '1' : '0'); } catch (e) { }
+        }
+      });
+      document.getElementById('sidebarOverlay')?.addEventListener('click', () => {
+        sidebar.classList.remove('show');
+        document.getElementById('sidebarOverlay').style.display = 'none';
+      });
+      // quick wiring for admin sidebar buttons
+      document.getElementById('adminUsersBtn')?.addEventListener('click', () => document.getElementById('loadUsersBtn')?.click());
+      document.getElementById('adminSessionsBtn')?.addEventListener('click', () => document.getElementById('loadSessionsBtn')?.click());
+      document.getElementById('adminHomeBtn')?.addEventListener('click', () => location.href = '/index.html');
+    })();
+  </script>
+</body>
+
+</html>

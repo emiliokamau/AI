@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Medical AI Assistant</title>
+    <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css">
     <style>
@@ -166,6 +167,40 @@
             border-top-right-radius: 0;
         }
         
+        /* Thinking mode styles */
+        .thinking-message .message-content {
+            background: linear-gradient(135deg, #e8f4fd 0%, #f0f8ff 100%);
+            border: 1px solid #b3d9ff;
+        }
+        
+        .thinking-indicator {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            color: #0d6efd;
+            font-weight: 500;
+            margin-bottom: 8px;
+            animation: thinking-pulse 2s ease-in-out infinite;
+        }
+        
+        .thinking-indicator i {
+            animation: thinking-spin 2s linear infinite;
+        }
+        
+        .streaming-content {
+            line-height: 1.5;
+        }
+        
+        @keyframes thinking-pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
+        }
+        
+        @keyframes thinking-spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
         .chat-input-container {
             padding: 15px;
             border-top: 1px solid #e9ecef;
@@ -218,20 +253,67 @@
             border-top: 1px solid #e9ecef;
             color: #6c757d;
         }
+        /* Collapsible sidebar styles */
+        #sidebar { transition: width .22s ease, transform .22s ease; }
+        #sidebar.collapsed { width:64px !important; }
+        #sidebar .labels { display:inline-block; }
+        #sidebar.collapsed .labels { display:none; }
+        #mainContent { transition: margin-left .22s ease; margin-left:240px; }
+        #mainContent.collapsed { margin-left:88px !important; }
+
+        /* Responsive adjustments */
+        @media (max-width: 992px) {
+            #mainContent { margin-left: 120px; }
+        }
+        @media (max-width: 768px) {
+            /* Sidebar behaves as overlay on small screens */
+            #sidebar { transform: translateX(-100%); width: 220px !important; }
+            #sidebar.collapsed { transform: translateX(-100%); }
+            #sidebar.show { transform: translateX(0); }
+            #mainContent, #mainContent.collapsed { margin-left: 0 !important; }
+            .chat-input-container { flex-wrap: wrap; gap: 8px; }
+            .chat-input { flex: 1 1 100%; margin-right: 0; }
+            #uploadBtn, #sendBtn, #emergencyBtn { width: 100%; }
+        }
     </style>
 </head>
 <body>
     <header class="header">
         <div class="container">
             <div class="logo">
-                <i class="bi bi-heart-pulse-fill"></i>
+                <img src="/static/logo.svg" alt="Medical AI Logo" style="width: 48px; height: 48px; object-fit: contain;">
                 <h1 class="h3 mb-0">Medical AI Assistant</h1>
             </div>
             <p class="mb-0 mt-2">Your virtual health companion for guidance and support</p>
         </div>
     </header>
 
-    <main class="container my-5">
+    <!-- Fixed toggle button above sidebar (stays visible) -->
+    <button id="fixedToggleBtn" class="btn btn-outline-secondary" title="Toggle sidebar" style="position:fixed;left:12px;top:92px;z-index:1100;padding:6px 8px;"><i class="bi bi-list"></i></button>
+
+    <!-- Sidebar overlay for small screens -->
+    <div id="sidebarOverlay" style="position:fixed;inset:0;background:rgba(0,0,0,0.35);z-index:1049;display:none;"></div>
+
+    <!-- Sidebar with navigation and session history -->
+    <div id="sidebar" class="sidebar" style="position:fixed;left:0;top:80px;bottom:0;width:220px;background:#f8f9fa;border-right:1px solid #e9ecef;padding:12px;overflow:auto;z-index:1050;">
+        <div style="display:flex;flex-direction:column;gap:8px;align-items:stretch;margin-bottom:12px;">
+            <div>
+                <button class="btn btn-sm btn-outline-secondary w-100 mb-2 labels" id="homeBtn">Home</button>
+                <button class="btn btn-sm btn-outline-primary w-100 mb-2 labels" id="profileBtn">
+                    <i class="bi bi-person-circle me-2"></i>My Profile
+                </button>
+                <button class="btn btn-sm btn-primary w-100 mb-2 labels" id="newChatBtn">New Chat</button>
+            </div>
+        </div>
+        <div style="display:flex;gap:6px;margin-bottom:12px;">
+            <button class="btn btn-sm btn-success w-50 labels" id="loginBtn">Login</button>
+            <button class="btn btn-sm btn-danger w-50 labels" id="logoutBtn">Logout</button>
+        </div>
+        <h6 class="labels">Conversations</h6>
+        <div id="sessionsList" style="margin-top:8px;"></div>
+    </div>
+
+    <main id="mainContent" class="container my-5" style="margin-left:240px;">
         <div class="emergency-alert" id="emergencyAlert">
             <i class="bi bi-exclamation-triangle-fill"></i>
             <strong>Emergency Notice:</strong> If you're experiencing a medical emergency, please call emergency services immediately or go to the nearest emergency room.
@@ -241,96 +323,53 @@
             <div class="col-lg-8 mx-auto">
                 <div class="card">
                     <div class="card-header">
-                        <i class="bi bi-person-badge me-2"></i>Patient Information
+                        <i class="bi bi-clipboard-check me-2"></i>Help Category
                     </div>
                     <div class="card-body">
-                        <form id="infoForm">
-                            <div class="row">
-                                <div class="col-md-6 mb-3">
-                                    <label for="fullName" class="form-label">Full Name</label>
-                                    <input type="text" class="form-control" id="fullName" required>
-                                </div>
-                                <div class="col-md-6 mb-3">
-                                    <label for="age" class="form-label">Age</label>
-                                    <input type="number" class="form-control" id="age" min="1" max="120" required>
-                                </div>
+                        <label for="helpCategory" class="form-label">Choose a help category</label>
+                        <select id="helpCategory" class="form-select mb-2">
+                            <option value="">-- Select category --</option>
+                            <option value="symptoms">Symptom Checker</option>
+                            <option value="medication">Medication Information</option>
+                            <option value="health-education">Health Education</option>
+                            <option value="lifestyle">Lifestyle Advice</option>
+                            <option value="mental-health">Mental Health Support</option>
+                            <option value="other">Other</option>
+                            <option value="emergency">Emergency Chat</option>
+                        </select>
+                        <div class="small text-muted">Select a category before starting a conversation; each selection creates a separate conversation session.</div>
+                        
+                        <!-- Privacy Mode Toggle -->
+                        <div class="mt-3 p-3 border rounded" style="background-color: #f8f9fa;">
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox" id="privacyModeToggle">
+                                <label class="form-check-label" for="privacyModeToggle">
+                                    <strong><i class="bi bi-shield-lock me-1"></i>Private Mode (Unmerged)</strong>
+                                </label>
                             </div>
-                            
-                            <div class="row">
-                                <div class="col-md-6 mb-3">
-                                    <label for="gender" class="form-label">Gender</label>
-                                    <select class="form-select" id="gender" required>
-                                        <option value="" selected disabled>Select</option>
-                                        <option value="male">Male</option>
-                                        <option value="female">Female</option>
-                                        <option value="other">Other</option>
-                                        <option value="prefer-not-to-say">Prefer not to say</option>
-                                    </select>
-                                </div>
-                                <div class="col-md-6 mb-3">
-                                    <label for="contact" class="form-label">Contact Number</label>
-                                    <input type="tel" class="form-control" id="contact" required>
-                                </div>
-                            </div>
-                            
-                            <div class="mb-3">
-                                <label for="medicalHistory" class="form-label">Medical History (Optional)</label>
-                                <textarea class="form-control" id="medicalHistory" rows="3" placeholder="Any pre-existing conditions, medications, allergies, etc."></textarea>
-                            </div>
-                        </form>
-                    </div>
-                </div>
-
-                <div class="card">
-                    <div class="card-header">
-                        <i class="bi bi-clipboard-check me-2"></i>How can we assist you today?
-                    </div>
-                    <div class="card-body">
-                        <div class="task-option" data-task="symptoms">
-                            <i class="bi bi-activity"></i>
-                            <div>
-                                <h5 class="mb-1">Symptom Checker</h5>
-                                <p class="mb-0 text-muted">Describe your symptoms to get potential causes and guidance</p>
+                            <div class="small text-muted mt-2">
+                                <span id="privacyModeDescription">
+                                    <i class="bi bi-info-circle me-1"></i>
+                                    <span id="privacyModeOff">Your conversation can be viewed by doctors for advice and emergency response.</span>
+                                    <span id="privacyModeOn" style="display: none;">Your conversation is completely private and will not be visible to doctors or external persons.</span>
+                                </span>
                             </div>
                         </div>
                         
-                        <div class="task-option" data-task="medication">
-                            <i class="bi bi-capsule"></i>
-                            <div>
-                                <h5 class="mb-1">Medication Information</h5>
-                                <p class="mb-0 text-muted">Get information about medications, usage, and potential side effects</p>
+                        <!-- Thinking Mode Toggle -->
+                        <div class="mt-3 p-3 border rounded" style="background-color: #e8f4fd;">
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox" id="thinkingModeToggle">
+                                <label class="form-check-label" for="thinkingModeToggle">
+                                    <strong><i class="bi bi-brain me-1"></i>Thinking Mode</strong>
+                                </label>
                             </div>
-                        </div>
-                        
-                        <div class="task-option" data-task="health-education">
-                            <i class="bi bi-book"></i>
-                            <div>
-                                <h5 class="mb-1">Health Education</h5>
-                                <p class="mb-0 text-muted">Learn about various health conditions and wellness topics</p>
-                            </div>
-                        </div>
-                        
-                        <div class="task-option" data-task="lifestyle">
-                            <i class="bi bi-heart"></i>
-                            <div>
-                                <h5 class="mb-1">Lifestyle Advice</h5>
-                                <p class="mb-0 text-muted">Get tips on diet, exercise, and healthy living</p>
-                            </div>
-                        </div>
-                        
-                        <div class="task-option" data-task="mental-health">
-                            <i class="bi bi-emoji-smile"></i>
-                            <div>
-                                <h5 class="mb-1">Mental Health Support</h5>
-                                <p class="mb-0 text-muted">Resources and guidance for mental well-being</p>
-                            </div>
-                        </div>
-                        
-                        <div class="task-option" data-task="other">
-                            <i class="bi bi-three-dots"></i>
-                            <div>
-                                <h5 class="mb-1">Other</h5>
-                                <p class="mb-0 text-muted">Any other health-related questions or concerns</p>
+                            <div class="small text-muted mt-2">
+                                <span id="thinkingModeDescription">
+                                    <i class="bi bi-lightbulb me-1"></i>
+                                    <span id="thinkingModeOff">AI responses appear instantly.</span>
+                                    <span id="thinkingModeOn" style="display: none;">See the AI's thought process in real-time as it formulates answers.</span>
+                                </span>
                             </div>
                         </div>
                     </div>
@@ -371,6 +410,9 @@
                 <input type="text" class="chat-input" id="chatInput" placeholder="Type your message here...">
                 <input type="file" id="fileInput" style="margin-right:8px;" />
                 <button class="btn btn-outline-secondary" id="uploadBtn" title="Attach file">📎</button>
+                <button class="btn btn-danger" id="emergencyBtn" title="Request emergency chat" style="margin-right:6px; display:none;">
+                    <i class="bi bi-telephone-fill"></i> Emergency Chat
+                </button>
                 <button class="btn btn-primary" id="sendBtn">
                     <i class="bi bi-send-fill"></i>
                 </button>
@@ -380,13 +422,17 @@
 
     <footer class="footer">
         <div class="container text-center">
-            <p class="mb-0">© 2023 Medical AI Assistant. All rights reserved.</p>
+            <p class="mb-0">© 2025 Medical AI Assistant. All rights reserved.</p>
+            <p class="mb-0">Developed by :EMILIO KAMAU</p>
             <p class="mb-0 mt-2">
                 <i class="bi bi-shield-check me-1"></i>
                 Your privacy is important to us. No personal health information is stored.
             </p>
         </div>
     </footer>
+
+    <!-- Admin button (fixed position) -->
+    <button class="btn btn-outline-danger" onclick="window.location.href='/admin.html'" style="position:fixed;top:20px;right:20px;z-index:999;">Admin</button>
 
     <script>
         document.addEventListener('DOMContentLoaded', function() {
@@ -401,22 +447,66 @@
             const chatMessages = document.getElementById('chatMessages');
             const loadingIndicator = document.getElementById('loadingIndicator');
             const emergencyAlert = document.getElementById('emergencyAlert');
+            const emergencyBtn = document.getElementById('emergencyBtn');
+            const homeBtn = document.getElementById('homeBtn');
+            const backBtn = document.getElementById('backBtn');
+            const newChatBtn = document.getElementById('newChatBtn');
+            const sessionsList = document.getElementById('sessionsList');
+            const loginBtn = document.getElementById('loginBtn');
+            const logoutBtn = document.getElementById('logoutBtn');
+            const sidebar = document.getElementById('sidebar');
+            const mainEl = document.querySelector('main');
+
+            // fixed toggle button (keeps it visible above the sidebar)
+            const fixedToggleBtn = document.getElementById('fixedToggleBtn');
+            // initialize collapsed state from sessionStorage
+            try {
+                const collapsed = sessionStorage.getItem('sidebar_collapsed') === '1';
+                if (collapsed) { sidebar.classList.add('collapsed'); mainEl.classList.add('collapsed'); }
+            } catch (e) { /* ignore sessionStorage errors */ }
+
             
             // State
             let selectedTask = null;
             let patientInfo = {};
+            let isAuthenticated = false;
+            let profileLoaded = false;
+
+            async function checkAndLoadProfile(){
+                const token = sessionStorage.getItem('jwt_token_patient') || sessionStorage.getItem('jwt_token') || null;
+                if (!token) return;
+                isAuthenticated = true;
+                try{
+                    const resp = await fetch('/profile', { headers: { 'Authorization': 'Bearer ' + token } });
+                    if (!resp.ok) return;
+                    const j = await resp.json();
+                    // populate form fields
+                    document.getElementById('fullName').value = j.full_name || j.fullName || '';
+                    document.getElementById('age').value = j.age || '';
+                    document.getElementById('gender').value = j.gender || '';
+                    document.getElementById('contact').value = j.contact || '';
+                    document.getElementById('medicalHistory').value = j.medical_history || j.medicalHistory || '';
+                    patientInfo = {
+                        fullName: j.full_name || j.fullName || '',
+                        age: j.age || '',
+                        gender: j.gender || '',
+                        contact: j.contact || '',
+                        medicalHistory: j.medical_history || j.medicalHistory || '',
+                        task: selectedTask
+                    };
+                    profileLoaded = true;
+                }catch(e){ /* ignore */ }
+            }
             
-            // Task selection
+            // Task selection - enable chat immediately when task is selected
             taskOptions.forEach(option => {
                 option.addEventListener('click', function() {
                     taskOptions.forEach(opt => opt.classList.remove('selected'));
                     this.classList.add('selected');
                     selectedTask = this.dataset.task;
                     
-                    // Check if form is valid
-                    if (isFormValid()) {
-                        startChatBtn.disabled = false;
-                    }
+                    // Enable start chat button
+                    startChatBtn.disabled = false;
                     
                     // Show emergency alert for symptom checker
                     if (selectedTask === 'symptoms') {
@@ -427,38 +517,22 @@
                 });
             });
             
-            // Form validation
-            function isFormValid() {
-                const fullName = document.getElementById('fullName').value.trim();
-                const age = document.getElementById('age').value.trim();
-                const gender = document.getElementById('gender').value;
-                const contact = document.getElementById('contact').value.trim();
-                
-                return fullName && age && gender && contact && selectedTask;
-            }
-            
-            // Add input event listeners to form fields
-            document.querySelectorAll('#infoForm input, #infoForm select').forEach(field => {
-                field.addEventListener('input', function() {
-                    if (isFormValid()) {
-                        startChatBtn.disabled = false;
-                    } else {
-                        startChatBtn.disabled = true;
-                    }
-                });
-            });
-            
             // Start chat
-            startChatBtn.addEventListener('click', function() {
-                // Collect patient information
-                patientInfo = {
-                    fullName: document.getElementById('fullName').value.trim(),
-                    age: document.getElementById('age').value.trim(),
-                    gender: document.getElementById('gender').value,
-                    contact: document.getElementById('contact').value.trim(),
-                    medicalHistory: document.getElementById('medicalHistory').value.trim(),
-                    task: selectedTask
-                };
+            startChatBtn.addEventListener('click', async function() {
+                // Load profile if authenticated
+                await checkAndLoadProfile();
+                
+                // Use default values if no profile loaded
+                if (!patientInfo || !patientInfo.fullName) {
+                    patientInfo = {
+                        fullName: 'User',
+                        age: '',
+                        gender: '',
+                        contact: '',
+                        medicalHistory: '',
+                        task: selectedTask
+                    };
+                }
                 
                 // Hide form and show chat
                 patientForm.style.display = 'none';
@@ -467,33 +541,168 @@
                 // Add initial AI message based on selected task
                 let initialMessage = getInitialMessage(selectedTask);
                 addAIMessage(initialMessage);
+                // hide emergency button initially
+                emergencyBtn.style.display = 'none';
+                // load session history (server for logged-in, else local)
+                loadSessions();
+                // initialize sidebar collapsed state for small screens
+                if (window.innerWidth <= 768) {
+                    sidebar.classList.add('collapsed');
+                    mainEl.classList.add('collapsed');
+                }
             });
 
-            // Patient login/register flow: ensure a JWT is present for patient actions
-            async function ensurePatientAuth() {
-                let token = sessionStorage.getItem('jwt_token_patient');
-                if (token) return token;
+            // Help category dropdown: create sessions per-category and handle emergency
+            const helpSelect = document.getElementById('helpCategory');
+            const privacyToggle = document.getElementById('privacyModeToggle');
+            const privacyModeOn = document.getElementById('privacyModeOn');
+            const privacyModeOff = document.getElementById('privacyModeOff');
+            const thinkingToggle = document.getElementById('thinkingModeToggle');
+            const thinkingModeOn = document.getElementById('thinkingModeOn');
+            const thinkingModeOff = document.getElementById('thinkingModeOff');
+            
+            // Privacy mode toggle handler
+            if (privacyToggle) {
+                privacyToggle.addEventListener('change', (e) => {
+                    if (e.target.checked) {
+                        privacyModeOff.style.display = 'none';
+                        privacyModeOn.style.display = 'inline';
+                    } else {
+                        privacyModeOff.style.display = 'inline';
+                        privacyModeOn.style.display = 'none';
+                    }
+                });
+            }
+            
+            // Thinking mode toggle handler
+            if (thinkingToggle) {
+                thinkingToggle.addEventListener('change', (e) => {
+                    if (e.target.checked) {
+                        thinkingModeOff.style.display = 'none';
+                        thinkingModeOn.style.display = 'inline';
+                    } else {
+                        thinkingModeOff.style.display = 'inline';
+                        thinkingModeOn.style.display = 'none';
+                    }
+                });
+            }
+            
+            if (helpSelect) {
+                helpSelect.addEventListener('change', async (e) => {
+                    const category = e.target.value;
+                    if (!category) return;
 
-                const isRegistered = confirm('Are you a registered patient? Click OK to login, Cancel to register');
-                if (isRegistered) {
-                    const username = prompt('Enter username');
-                    const password = prompt('Enter password');
-                    if (!username || !password) return null;
-                    const resp = await fetch('/users/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username, password }) });
-                    const j = await resp.json();
-                    if (!resp.ok) { alert('Login failed: ' + (j.error || resp.statusText)); return null; }
-                    sessionStorage.setItem('jwt_token_patient', j.token);
-                    return j.token;
+                    // If Emergency selected, create session and notify clinicians immediately
+                    if (category === 'emergency') {
+                        const calmText = "We're here to help. If you feel unsafe or are in immediate danger, please call emergency services right away.";
+                        const isPrivate = privacyToggle && privacyToggle.checked;
+                        try {
+                            const res = await fetch('/sessions', {
+                                method: 'POST', headers: {'Content-Type':'application/json'},
+                                body: JSON.stringify({task: category, patient_info: null, is_private: isPrivate})
+                            });
+                            const j = await res.json();
+                            if (j.session_id) {
+                                // show calming message locally and notify server
+                                addAIMessage(calmText);
+                                await fetch('/emergency_alert', {method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({session_id: j.session_id, note: 'Patient started Emergency Chat via category selection'})});
+                                window.__CHAT_SESSION_ID = j.session_id;
+                                addSessionToSidebar({ id: j.session_id, patient_name: patientInfo.fullName || '', created_at: new Date().toISOString() });
+                                // open chat UI
+                                patientForm.style.display = 'none';
+                                chatContainer.style.display = 'block';
+                                emergencyBtn.style.display = 'inline-block';
+                            }
+                        } catch (err) {
+                            console.error('Emergency session create failed', err);
+                        }
+                        return;
+                    }
+
+                    // Non-emergency: create a session and start chat
+                    const isPrivate = privacyToggle && privacyToggle.checked;
+                    try {
+                        const res = await fetch('/sessions', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({task: category, patient_info: null, is_private: isPrivate}) });
+                        const j = await res.json();
+                        if (j.session_id) {
+                            window.__CHAT_SESSION_ID = j.session_id;
+                            addSessionToSidebar({ id: j.session_id, patient_name: patientInfo.fullName || '', created_at: new Date().toISOString() });
+                            // open chat UI and show initial message for the category
+                            patientForm.style.display = 'none';
+                            chatContainer.style.display = 'block';
+                            const initial = getInitialMessage(category);
+                            addAIMessage(initial);
+                        } else {
+                            alert('Unable to create session. Please try again.');
+                        }
+                    } catch (err) {
+                        console.error('Session create failed', err);
+                        alert('Unable to create session.');
+                    }
+                });
+            }
+
+            // Sidebar toggle handled by fixed toggle button (keeps the button visible)
+            fixedToggleBtn?.addEventListener('click', function(){
+                if (window.innerWidth <= 768) {
+                    // Mobile: slide-in overlay menu
+                    const isOpen = sidebar.classList.contains('show');
+                    if (isOpen) {
+                        sidebar.classList.remove('show');
+                        document.getElementById('sidebarOverlay').style.display = 'none';
+                    } else {
+                        sidebar.classList.add('show');
+                        document.getElementById('sidebarOverlay').style.display = 'block';
+                    }
                 } else {
-                    const username = prompt('Choose a username for registration');
-                    const password = prompt('Choose a password');
-                    if (!username || !password) return null;
-                    const resp = await fetch('/users/register', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username, password, role: 'patient' }) });
-                    const j = await resp.json();
-                    if (!resp.ok) { alert('Register failed: ' + (j.error || resp.statusText)); return null; }
-                    alert('Registered successfully. Please login now.');
-                    return await ensurePatientAuth();
+                    // Desktop: classic collapse
+                    sidebar.classList.toggle('collapsed');
+                    mainEl.classList.toggle('collapsed');
+                    try { sessionStorage.setItem('sidebar_collapsed', sidebar.classList.contains('collapsed') ? '1' : '0'); } catch(e){}
                 }
+            });
+
+            // Close sidebar when overlay is clicked
+            document.getElementById('sidebarOverlay').addEventListener('click', () => {
+                sidebar.classList.remove('show');
+                document.getElementById('sidebarOverlay').style.display = 'none';
+            });
+
+            // Login / Logout
+            // Go to unified auth page
+            loginBtn.addEventListener('click', function(){ window.location.href = '/auth'; });
+            logoutBtn.addEventListener('click', doLogout);
+
+            // Idle logout: 5 minutes of inactivity
+            let idleTimeout = null;
+            const IDLE_MS = 5 * 60 * 1000; // 5 minutes
+            function resetIdleTimer(){
+                if (idleTimeout) clearTimeout(idleTimeout);
+                idleTimeout = setTimeout(() => {
+                    // perform logout due to inactivity
+                    doLogout(true);
+                }, IDLE_MS);
+            }
+            function doLogout(isIdle=false){
+                // Clear JWTs and role info; keep local sessions
+                sessionStorage.removeItem('jwt_token');
+                sessionStorage.removeItem('jwt_token_patient');
+                sessionStorage.removeItem('user_role');
+                // Optionally notify server of logout (not required for prototype)
+                if (!isIdle) {
+                    // user-initiated logout
+                }
+                window.location.href = '/';
+            }
+            // Reset timer on common user interactions
+            ['click','mousemove','keydown','touchstart'].forEach(evt => document.addEventListener(evt, resetIdleTimer));
+            resetIdleTimer();
+
+            // Patient auth helper: return existing token if present; do not force login prompts
+            async function ensurePatientAuth() {
+                // Prefer explicit patient token, fall back to any JWT (e.g., one-time login)
+                const token = sessionStorage.getItem('jwt_token_patient') || sessionStorage.getItem('jwt_token') || null;
+                return token;
             }
             
             // End chat
@@ -522,52 +731,263 @@
                 addUserMessage(message);
                 chatInput.value = '';
 
-                // Show loading indicator
+                // Check if thinking mode is enabled
+                const thinkingMode = thinkingToggle && thinkingToggle.checked;
+
+                // Show loading indicator (or thinking indicator if thinking mode)
+                if (thinkingMode) {
+                    loadingIndicator.innerHTML = '<i class="bi bi-brain"></i> AI is thinking...';
+                }
                 loadingIndicator.style.display = 'block';
 
-                // Ensure patient is authenticated (JWT)
+                // Try to include JWT if present; do not block anonymous users from chatting
                 const token = await ensurePatientAuth();
-                if (!token) {
-                    loadingIndicator.style.display = 'none';
-                    addAIMessage('<div class="text-danger">Authentication required to chat.</div>');
-                    return;
-                }
 
-                // Build payload
-                const payload = {
-                    message: message,
-                    patient_info: patientInfo,
-                    session_id: window.__CHAT_SESSION_ID || null
-                };
+                // Build payload. If an authenticated profile is loaded, we don't need to include patient_info.
+                const isPrivate = privacyToggle && privacyToggle.checked;
+                const payload = { message: message, session_id: window.__CHAT_SESSION_ID || null, thinking_mode: thinkingMode, is_private: isPrivate };
+                if (!isAuthenticated || !profileLoaded) payload.patient_info = patientInfo;
 
                 try {
-                    const resp = await fetch('/chat', {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'Authorization': 'Bearer ' + token
-                        },
-                        body: JSON.stringify(payload)
-                    });
+                    // Build headers; include Authorization only when we have a token
+                    const headers = { 'Content-Type': 'application/json' };
+                    if (token) headers['Authorization'] = 'Bearer ' + token;
+                    
+                    if (thinkingMode) {
+                        // Use streaming for thinking mode
+                        await sendMessageStreaming(payload, headers);
+                    } else {
+                        // Use regular request
+                        const resp = await fetch('/chat', {
+                            method: 'POST',
+                            headers: headers,
+                            body: JSON.stringify(payload)
+                        });
 
-                    const data = await resp.json();
-                    loadingIndicator.style.display = 'none';
+                        const data = await resp.json();
+                        loadingIndicator.style.display = 'none';
 
-                    if (!resp.ok) {
-                        addAIMessage(`<div class="text-danger">Error: ${data.error || 'Unknown error'}</div>`);
-                        return;
-                    }
+                        if (!resp.ok) {
+                            addAIMessage(`<div class="text-danger">Error: ${data.error || 'Unknown error'}</div>`);
+                            return;
+                        }
 
-                    // Insert AI reply (HTML is returned from server)
-                    addAIMessage(data.reply_html || data.reply_text || '');
+                        // Insert AI reply (HTML is returned from server)
+                        addAIMessage(data.reply_html || data.reply_text || '');
 
-                    // Store session id for continued conversation
-                    if (data.session_id) {
-                        window.__CHAT_SESSION_ID = data.session_id;
+                        // If server signaled an emergency, show the emergency chat button and a calm prompt
+                        if (data.emergency) {
+                            emergencyBtn.style.display = 'inline-block';
+                            addAIMessage(`<div class="text-warning">If you'd like, you can request an emergency chat with a clinician. <button class="btn btn-sm btn-danger" onclick="requestEmergencyChat()">Request Emergency Chat</button></div>`);
+                        }
+
+                        // Store session id for continued conversation
+                        if (data.session_id) {
+                            window.__CHAT_SESSION_ID = data.session_id;
+                            // add to server-side sessions list if authenticated; otherwise store locally
+                            try { addSessionToSidebar({ id: data.session_id, patient_name: patientInfo.fullName || '', created_at: new Date().toISOString() }); } catch(e){}
+                        }
                     }
                 } catch (err) {
                     loadingIndicator.style.display = 'none';
                     addAIMessage('<div class="text-danger">Network error: could not reach /chat endpoint.</div>');
+                }
+            }
+
+            // Streaming message function for thinking mode
+            async function sendMessageStreaming(payload, headers) {
+                try {
+                    const resp = await fetch('/chat/stream', {
+                        method: 'POST',
+                        headers: headers,
+                        body: JSON.stringify(payload)
+                    });
+
+                    if (!resp.ok) {
+                        const data = await resp.json().catch(() => ({error: 'Unknown error'}));
+                        loadingIndicator.style.display = 'none';
+                        addAIMessage(`<div class="text-danger">Error: ${data.error || 'Unknown error'}</div>`);
+                        return;
+                    }
+
+                    // Create a streaming message container
+                    const messageDiv = document.createElement('div');
+                    messageDiv.className = 'message ai thinking-message';
+                    messageDiv.innerHTML = `
+                        <div class="message-content">
+                            <div class="thinking-indicator">
+                                <i class="bi bi-brain"></i>
+                                <span>AI is thinking...</span>
+                            </div>
+                            <div class="streaming-content"></div>
+                        </div>
+                    `;
+                    chatMessages.appendChild(messageDiv);
+                    const streamingContent = messageDiv.querySelector('.streaming-content');
+                    const thinkingIndicator = messageDiv.querySelector('.thinking-indicator');
+
+                    // Read the streaming response
+                    const reader = resp.body.getReader();
+                    const decoder = new TextDecoder();
+                    let buffer = '';
+                    let fullResponse = '';
+
+                    while (true) {
+                        const { done, value } = await reader.read();
+                        if (done) break;
+
+                        buffer += decoder.decode(value, { stream: true });
+                        const lines = buffer.split('\n');
+                        buffer = lines.pop(); // Keep incomplete line in buffer
+
+                        for (const line of lines) {
+                            if (line.startsWith('data: ')) {
+                                const data = line.slice(6);
+                                if (data === '[DONE]') {
+                                    // Stream ended
+                                    thinkingIndicator.style.display = 'none';
+                                    loadingIndicator.style.display = 'none';
+                                    break;
+                                }
+                                try {
+                                    const chunk = JSON.parse(data);
+                                    if (chunk.content) {
+                                        fullResponse += chunk.content;
+                                        streamingContent.innerHTML = fullResponse.replace(/\n/g, '<br>');
+                                        // Scroll to bottom
+                                        chatMessages.scrollTop = chatMessages.scrollHeight;
+                                    }
+                                    if (chunk.emergency) {
+                                        emergencyBtn.style.display = 'inline-block';
+                                    }
+                                } catch (e) {
+                                    console.error('Error parsing streaming chunk:', e);
+                                }
+                            }
+                        }
+                    }
+
+                    // Store session id for continued conversation
+                    if (payload.session_id) {
+                        window.__CHAT_SESSION_ID = payload.session_id;
+                        try { addSessionToSidebar({ id: payload.session_id, patient_name: patientInfo.fullName || '', created_at: new Date().toISOString() }); } catch(e){}
+                    }
+
+                } catch (err) {
+                    loadingIndicator.style.display = 'none';
+                    addAIMessage('<div class="text-danger">Network error during streaming.</div>');
+                }
+            }
+
+            // Load sessions: if authenticated, fetch from server /my_sessions; otherwise load from localStorage
+            async function loadSessions(){
+                sessionsList.innerHTML = '<div class="small text-muted">Loading...</div>';
+                const token = sessionStorage.getItem('jwt_token_patient') || sessionStorage.getItem('jwt_token') || null;
+                if (token){
+                    try{
+                        const resp = await fetch('/my_sessions', { headers: { 'Authorization': 'Bearer ' + token }});
+                        const j = await resp.json();
+                        renderSessions(j.sessions || []);
+                        return;
+                    }catch(e){ /* fall back to local */ }
+                }
+                // local sessions for anonymous users
+                const ls = JSON.parse(localStorage.getItem('local_sessions') || '[]');
+                renderSessions(ls || []);
+            }
+
+            function renderSessions(sessions){
+                sessionsList.innerHTML = '';
+                if (!sessions || sessions.length === 0){
+                    sessionsList.innerHTML = '<div class="small text-muted">No conversations yet</div>';
+                    return;
+                }
+                sessions.forEach(s => {
+                    const el = document.createElement('div');
+                    el.className = 'mb-2';
+                    const title = s.patient_name || ('Chat ' + s.id);
+                    el.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center"><a href="#" data-id="${s.id}" class="session-link">${escapeHtml(title)}</a><span class="small text-muted">${(s.created_at||'').slice(0,16).replace('T',' ')}</span></div>`;
+                    sessionsList.appendChild(el);
+                });
+                // attach click handlers
+                document.querySelectorAll('.session-link').forEach(a => {
+                    a.addEventListener('click', async function(e){
+                        e.preventDefault();
+                        const sid = this.dataset.id;
+                        // load messages for session
+                        await loadSessionMessages(sid);
+                        // show chat
+                        patientForm.style.display = 'none';
+                        chatContainer.style.display = 'block';
+                    });
+                });
+            }
+
+            // load messages for a session id (server-side if authenticated, else attempt localStorage)
+            async function loadSessionMessages(sid){
+                const token = sessionStorage.getItem('jwt_token_patient') || sessionStorage.getItem('jwt_token') || null;
+                chatMessages.innerHTML = '';
+                if (token){
+                    try{
+                        const resp = await fetch(`/sessions/${sid}/messages`, { headers: { 'Authorization': 'Bearer ' + token }});
+                        const j = await resp.json();
+                        if (!resp.ok) { addAIMessage('<div class="text-danger">Unable to load conversation</div>'); return }
+                        j.messages.forEach(m => {
+                            if (m.role === 'user') addUserMessage(m.content);
+                            else addAIMessage(m.content);
+                        });
+                        window.__CHAT_SESSION_ID = sid;
+                        return;
+                    }catch(e){ /* fall back to local */ }
+                }
+                // localStorage fallback
+                const ls = JSON.parse(localStorage.getItem('local_sessions') || '[]');
+                const conv = ls.find(x => String(x.id) === String(sid));
+                if (!conv){ addAIMessage('<div class="text-muted">Conversation not found locally.</div>'); return }
+                (conv.messages||[]).forEach(m => { if (m.role==='user') addUserMessage(m.content); else addAIMessage(m.content); });
+                window.__CHAT_SESSION_ID = sid;
+            }
+
+            function addSessionToSidebar(s){
+                // if authenticated, reload sessions from server; otherwise persist locally
+                const token = sessionStorage.getItem('jwt_token_patient') || sessionStorage.getItem('jwt_token') || null;
+                if (token) { loadSessions(); return; }
+                const ls = JSON.parse(localStorage.getItem('local_sessions') || '[]');
+                // avoid duplicates
+                if (!ls.find(x => String(x.id) === String(s.id))){
+                    ls.unshift({ id: s.id, patient_name: s.patient_name || '', created_at: s.created_at || new Date().toISOString(), messages: s.messages || [] });
+                    localStorage.setItem('local_sessions', JSON.stringify(ls));
+                    renderSessions(ls);
+                }
+            }
+
+            // Home / Back / New Chat handlers
+            homeBtn.addEventListener('click', function(){ window.location.href = '/'; });
+            const profileBtn = document.getElementById('profileBtn');
+            if (profileBtn) {
+                profileBtn.addEventListener('click', function(){ window.location.href = '/profile.html'; });
+            }
+            newChatBtn.addEventListener('click', function(){
+                // clear current session and show form
+                window.__CHAT_SESSION_ID = null;
+                chatMessages.innerHTML = '<div class="message ai"><div class="message-content">Hello! I\'m your medical AI assistant. How can I help you today?</div></div>';
+                chatContainer.style.display = 'none';
+                patientForm.style.display = 'block';
+            });
+
+            // Request an emergency chat - notify clinicians and show calming guidance
+            window.requestEmergencyChat = async function() {
+                const sessionId = window.__CHAT_SESSION_ID || null;
+                try {
+                    const resp = await fetch('/emergency_alert', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ session_id: sessionId, patient_info: patientInfo }) });
+                    const j = await resp.json();
+                    if (!resp.ok) { addAIMessage(`<div class="text-danger">Unable to request emergency chat: ${j.error || resp.statusText}</div>`); return }
+                    // Calm, reassuring message
+                    addAIMessage('<div class="alert alert-warning">A clinician has been notified and will review your session shortly. If you are in immediate danger, call local emergency services now. Try to breathe slowly — help is being requested.</div>');
+                    // hide the emergency button after requesting
+                    emergencyBtn.style.display = 'none';
+                } catch (e) {
+                    addAIMessage('<div class="text-danger">Network error while requesting emergency chat.</div>');
                 }
             }
 
