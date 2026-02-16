@@ -94,6 +94,16 @@ def get_db():
 def init_db():
     # Initialize database - supports both MySQL and PostgreSQL
     database_url = os.environ.get('DATABASE_URL')
+    if database_url:
+        config = parse_database_url(database_url)
+        if config['engine'] == 'postgresql':
+            # Postgres detected (Render). Skip MySQL-specific init.
+            return
+        host = config['host']
+        user = config['user']
+        password = config['password']
+        port = config['port']
+        db_name = config['db']
     else:
         host = DB_HOST
         user = DB_USER
