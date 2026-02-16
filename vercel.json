@@ -6,11 +6,6 @@
   "outputDirectory": ".",
   "cleanUrls": true,
   "trailingSlash": false,
-  "env": {
-    "BACKEND_URL": "@backend_url",
-    "GEMINI_API_KEY": "@gemini_api_key"
-  },
-  "envPrefix": "REACT_APP_",
   "framework": null,
   "functions": {},
   "headers": [
