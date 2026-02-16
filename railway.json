@@ -1,0 +1,23 @@
+{
+  "$schema": "https://railway.app/schema.json",
+  "build": {
+    "builder": "nixpacks",
+    "config": {
+      "python": "3.11",
+      "nixPackages": [
+        "libmysqlclient"
+      ],
+      "nixpacks": {
+        "aptPackages": [
+          "libmysqlclient-dev"
+        ]
+      }
+    }
+  },
+  "deploy": {
+    "startCommand": "gunicorn --workers 4 --worker-class sync --bind 0.0.0.0:$PORT --timeout 120 --access-logfile - --error-logfile - app:app",
+    "healthcheckPath": "/health",
+    "restartPolicyType": "always",
+    "restartPolicyMaxRetries": 5
+  }
+}
