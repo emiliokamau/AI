@@ -451,6 +451,12 @@
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/js/bootstrap.bundle.min.js"></script>
     <script>
         let currentProfile = {};
+        let currentPreferences = {
+            language: 'en',
+            response_style: 'detailed',
+            reminders: 'daily',
+            privacy_default: 'merged'
+        };
         let healthGoals = [];
 
         // Alert helper functions
@@ -528,18 +534,75 @@
             }
         }
 
+        function getAuthToken() {
+            return sessionStorage.getItem('jwt_token_patient') || sessionStorage.getItem('jwt_token');
+        }
+
+        function languageLabel(code) {
+            const mapping = { en: 'English', es: 'Spanish', fr: 'French', sw: 'Swahili' };
+            return mapping[code] || 'English';
+        }
+
+        function responseStyleLabel(value) {
+            const mapping = {
+                detailed: 'Detailed and empathetic',
+                concise: 'Brief and to the point',
+                technical: 'Technical and medical',
+                simple: 'Simple and easy to understand'
+            };
+            return mapping[value] || 'Detailed and empathetic';
+        }
+
+        function remindersLabel(value) {
+            const mapping = { daily: 'Daily health tips', weekly: 'Weekly', monthly: 'Monthly', never: 'Never' };
+            return mapping[value] || 'Daily health tips';
+        }
+
         async function loadPreferences() {
-            // Load from localStorage (can be extended to server-side storage)
-            const prefs = JSON.parse(localStorage.getItem('ai_preferences') || '{}');
-            
-            document.getElementById('displayLanguage').textContent = prefs.language || 'English';
-            document.getElementById('displayResponseStyle').textContent = prefs.responseStyle || 'Detailed and empathetic';
-            document.getElementById('displayReminders').textContent = prefs.reminders || 'Daily health tips';
-            document.getElementById('displayPrivacy').textContent = prefs.privacy === 'private' ? 'Private (hidden from doctors)' : 'Merged (visible to doctors)';
+            const token = getAuthToken();
+            if (!token) return;
+
+            try {
+                const resp = await fetch('/preferences', {
+                    headers: { 'Authorization': 'Bearer ' + token }
+                });
+                if (resp.ok) {
+                    const prefs = await resp.json();
+                    currentPreferences = {
+                        language: prefs.language || 'en',
+                        response_style: prefs.response_style || 'detailed',
+                        reminders: prefs.reminders || 'daily',
+                        privacy_default: prefs.privacy_default || 'merged'
+                    };
+                }
+            } catch (err) {
+                console.error('Error loading preferences:', err);
+            }
+
+            document.getElementById('displayLanguage').textContent = languageLabel(currentPreferences.language);
+            document.getElementById('displayResponseStyle').textContent = responseStyleLabel(currentPreferences.response_style);
+            document.getElementById('displayReminders').textContent = remindersLabel(currentPreferences.reminders);
+            document.getElementById('displayPrivacy').textContent = currentPreferences.privacy_default === 'private'
+                ? 'Private (hidden from doctors)'
+                : 'Merged (visible to doctors)';
         }
 
         async function loadHealthGoals() {
-            healthGoals = JSON.parse(localStorage.getItem('health_goals') || '[]');
+            const token = getAuthToken();
+            if (!token) return;
+
+            try {
+                const resp = await fetch('/health_goals', {
+                    headers: { 'Authorization': 'Bearer ' + token }
+                });
+                if (resp.ok) {
+                    const data = await resp.json();
+                    healthGoals = data.goals || [];
+                }
+            } catch (err) {
+                console.error('Error loading health goals:', err);
+            }
+
             renderHealthGoals();
         }
 
@@ -550,15 +613,15 @@
                 return;
             }
 
-            container.innerHTML = healthGoals.map((goal, idx) => `
+            container.innerHTML = healthGoals.map((goal) => `
                 <div class="preference-item">
                     <div class="d-flex justify-content-between align-items-start">
                         <div class="flex-grow-1">
                             <h5><i class="bi bi-flag me-2"></i>${goal.title}</h5>
-                            <p>${goal.description}</p>
-                            ${goal.targetDate ? `<small class="text-muted"><i class="bi bi-calendar me-1"></i>Target: ${goal.targetDate}</small>` : ''}
+                            <p>${goal.notes || ''}</p>
+                            ${goal.target_date ? `<small class="text-muted"><i class="bi bi-calendar me-1"></i>Target: ${goal.target_date}</small>` : ''}
                         </div>
-                        <button class="btn btn-sm btn-outline-danger" onclick="deleteGoal(${idx})">
+                        <button class="btn btn-sm btn-outline-danger" onclick="deleteGoal(${goal.id})">
                             <i class="bi bi-trash"></i>
                         </button>
                     </div>
@@ -682,27 +745,46 @@
         }
 
         function editAIPreferences() {
-            const prefs = JSON.parse(localStorage.getItem('ai_preferences') || '{}');
-            document.getElementById('editLanguage').value = prefs.language || 'en';
-            document.getElementById('editResponseStyle').value = prefs.responseStyle || 'detailed';
-            document.getElementById('editReminders').value = prefs.reminders || 'daily';
-            document.getElementById('editPrivacy').value = prefs.privacy || 'merged';
+            document.getElementById('editLanguage').value = currentPreferences.language || 'en';
+            document.getElementById('editResponseStyle').value = currentPreferences.response_style || 'detailed';
+            document.getElementById('editReminders').value = currentPreferences.reminders || 'daily';
+            document.getElementById('editPrivacy').value = currentPreferences.privacy_default || 'merged';
             new bootstrap.Modal(document.getElementById('editAIModal')).show();
         }
 
-        function saveAIPreferences() {
+        async function saveAIPreferences() {
+            const token = getAuthToken();
+            if (!token) {
+                showErrorAlert('Please login to save preferences');
+                return;
+            }
+
             const prefs = {
                 language: document.getElementById('editLanguage').value,
-                responseStyle: document.getElementById('editResponseStyle').value,
+                response_style: document.getElementById('editResponseStyle').value,
                 reminders: document.getElementById('editReminders').value,
-                privacy: document.getElementById('editPrivacy').value
+                privacy_default: document.getElementById('editPrivacy').value
             };
 
-            localStorage.setItem('ai_preferences', JSON.stringify(prefs));
-            const modal = bootstrap.Modal.getInstance(document.getElementById('editAIModal'));
-            if (modal) modal.hide();
-            loadPreferences();
-            showSuccessAlert('AI preferences saved successfully!');
+            try {
+                const resp = await fetch('/preferences', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': 'Bearer ' + token
+                    },
+                    body: JSON.stringify(prefs)
+                });
+
+                if (!resp.ok) throw new Error('Failed to save preferences');
+                const modal = bootstrap.Modal.getInstance(document.getElementById('editAIModal'));
+                if (modal) modal.hide();
+                await loadPreferences();
+                showSuccessAlert('AI preferences saved successfully!');
+            } catch (err) {
+                console.error('Error saving preferences:', err);
+                showErrorAlert('Error saving preferences: ' + err.message);
+            }
         }
 
         function editHealthGoals() {
@@ -712,12 +794,17 @@
             new bootstrap.Modal(document.getElementById('editGoalsModal')).show();
         }
 
-        function saveHealthGoal() {
+        async function saveHealthGoal() {
+            const token = getAuthToken();
+            if (!token) {
+                showErrorAlert('Please login to add goals');
+                return;
+            }
+
             const goal = {
                 title: document.getElementById('goalTitle').value,
-                description: document.getElementById('goalDescription').value,
-                targetDate: document.getElementById('goalDate').value,
-                created: new Date().toISOString()
+                notes: document.getElementById('goalDescription').value,
+                target_date: document.getElementById('goalDate').value
             };
 
             if (!goal.title) {
@@ -725,20 +812,46 @@
                 return;
             }
 
-            healthGoals.push(goal);
-            localStorage.setItem('health_goals', JSON.stringify(healthGoals));
-            const modal = bootstrap.Modal.getInstance(document.getElementById('editGoalsModal'));
-            if (modal) modal.hide();
-            renderHealthGoals();
-            showSuccessAlert('Health goal added successfully!');
+            try {
+                const resp = await fetch('/health_goals', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': 'Bearer ' + token
+                    },
+                    body: JSON.stringify(goal)
+                });
+
+                if (!resp.ok) throw new Error('Failed to add goal');
+                const modal = bootstrap.Modal.getInstance(document.getElementById('editGoalsModal'));
+                if (modal) modal.hide();
+                await loadHealthGoals();
+                showSuccessAlert('Health goal added successfully!');
+            } catch (err) {
+                console.error('Error adding goal:', err);
+                showErrorAlert('Error adding goal: ' + err.message);
+            }
         }
 
-        function deleteGoal(index) {
-            if (confirm('Are you sure you want to delete this goal?')) {
-                healthGoals.splice(index, 1);
-                localStorage.setItem('health_goals', JSON.stringify(healthGoals));
-                renderHealthGoals();
+        async function deleteGoal(goalId) {
+            if (!confirm('Are you sure you want to delete this goal?')) return;
+            const token = getAuthToken();
+            if (!token) {
+                showErrorAlert('Please login to delete goals');
+                return;
+            }
+
+            try {
+                const resp = await fetch(`/health_goals/${goalId}`, {
+                    method: 'DELETE',
+                    headers: { 'Authorization': 'Bearer ' + token }
+                });
+                if (!resp.ok) throw new Error('Failed to delete goal');
+                await loadHealthGoals();
                 showSuccessAlert('Goal deleted successfully!');
+            } catch (err) {
+                console.error('Error deleting goal:', err);
+                showErrorAlert('Error deleting goal: ' + err.message);
             }
         }
     </script>

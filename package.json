@@ -1,0 +1,23 @@
+{
+  "name": "medical-ai-frontend",
+  "version": "1.0.0",
+  "description": "Medical AI Assistant - Frontend for Vercel deployment",
+  "private": true,
+  "author": "Emilio Kamau",
+  "license": "ISC",
+  "scripts": {
+    "build": "echo 'Static HTML/CSS/JS site - no build required'",
+    "start": "echo 'Ready for Vercel deployment'",
+    "test": "echo 'No automated tests configured'"
+  },
+  "keywords": [
+    "medical",
+    "ai",
+    "healthcare",
+    "telemedicine",
+    "health-assistant"
+  ],
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

@@ -1,0 +1,41 @@
+{
+  "services": [
+    {
+      "type": "web",
+      "name": "medical-ai-backend",
+      "env": "python",
+      "plan": "free",
+      "buildCommand": "pip install -r requirements.txt",
+      "startCommand": "gunicorn app:app",
+      "envVars": [
+        {
+          "key": "FLASK_ENV",
+          "value": "production"
+        },
+        {
+          "key": "CORS_ORIGINS",
+          "value": "http://localhost:5000,https://yourapp.vercel.app"
+        },
+        {
+          "key": "GEMINI_API_KEY",
+          "sync": false
+        },
+        {
+          "key": "SENDGRID_API_KEY",
+          "sync": false
+        },
+        {
+          "key": "SENDGRID_FROM_EMAIL",
+          "value": "emiliokamau35@gmail.com"
+        }
+      ],
+      "databases": [
+        {
+          "name": "medical-ai-db",
+          "engine": "postgresql",
+          "plan": "free"
+        }
+      ]
+    }
+  ]
+}

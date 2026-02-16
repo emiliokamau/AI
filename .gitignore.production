@@ -1,0 +1,91 @@
+# .gitignore Update - Production Security
+
+To prevent accidentally committing secrets to git, add the following to your `./.gitignore`:
+
+## Production Secrets & Configuration
+.env
+.env.prod
+.env.production
+.env.local
+.env.*.local
+
+## SSL Certificates & Keys (if keeping locally)
+*.pem
+*.key
+*.crt
+*.pfx
+*.p12
+
+## Python/Virtual Environment
+venv/
+env/
+ENV/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+## IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+## Application Generated
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+chats.db
+*.log
+logs/
+tmp/
+
+## Database Backups
+*.sql
+*.sql.gz
+backup.*
+backups/
+
+## Sensitive Configuration
+config.local.py
+secrets.json
+private_keys/
+certs/local/
+
+## OS Files
+.DS_Store
+Thumbs.db
+*.tmp
+
+## Build Artifacts
+/build
+/dist
+*.egg-info
+.coverage
+.pytest_cache/
+
+## Never Commit These in Production
+# Database credentials
+# API keys
+# JWT secrets
+# Encryption keys
+# AWS access keys
+# SendGrid keys
+# Daraja credentials
+# Any personally identifiable information
+# Any medical/health data for testing

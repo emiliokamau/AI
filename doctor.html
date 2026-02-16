@@ -7,24 +7,412 @@
     <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <!-- Google Maps API -->
+    <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyBFw0Qbyq9zTFTd-tUY6dZWTgaQzuU17R8" defer></script>
     <style>
-        /* Doctor collapsible sidebar styles */
-        #sidebar { position: fixed; left: 0; top: 80px; bottom: 0; width: 220px; background: #f8f9fa; border-right: 1px solid #e9ecef; padding: 12px; overflow:auto; z-index:1050; transition: width .22s ease; }
-        #sidebar.collapsed { width:64px !important; }
-        #sidebar .labels { display:inline-block; }
-        #sidebar.collapsed .labels { display:none; }
-        #mainContent { transition: margin-left .22s ease; margin-left:240px; }
-        #mainContent.collapsed { margin-left:88px !important; }
-        #fixedToggleBtn { position: fixed; left: 12px; top: 92px; z-index:1100; }
+        /* Modern Sidebar Styles */
+        #sidebar { 
+            position: fixed; 
+            left: 0; 
+            top: 80px; 
+            bottom: 0; 
+            width: 260px; 
+            background: #ffffff; 
+            border-right: 1px solid #e0e0e0; 
+            padding: 0; 
+            overflow-y: auto; 
+            z-index: 1050; 
+            box-shadow: 2px 0 8px rgba(0,0,0,0.05);
+            transition: width .3s ease, transform .22s ease;
+        }
+        
+        #sidebar.collapsed {
+            width: 70px;
+        }
+        
+        .sidebar-collapse-btn {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 12px;
+            background: #f8f9fa;
+            border: none;
+            border-bottom: 1px solid #e0e0e0;
+            cursor: pointer;
+            transition: background 0.2s ease;
+            width: 100%;
+        }
+        
+        .sidebar-collapse-btn:hover {
+            background: #e9ecef;
+        }
+        
+        .sidebar-collapse-btn i {
+            font-size: 20px;
+            color: #495057;
+            transition: transform 0.3s ease;
+        }
+        
+        #sidebar.collapsed .sidebar-collapse-btn i {
+            transform: rotate(180deg);
+        }
+        
+        .sidebar-section {
+            border-bottom: 1px solid #f0f0f0;
+        }
+        
+        .sidebar-section-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 16px;
+            cursor: pointer;
+            transition: background 0.2s ease;
+        }
+        
+        .sidebar-section-header:hover {
+            background: #f8f9fa;
+        }
+        
+        .sidebar-section-title {
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            color: #6c757d;
+            letter-spacing: 0.5px;
+            flex: 1;
+        }
+        
+        .sidebar-section-toggle {
+            font-size: 14px;
+            color: #6c757d;
+            transition: transform 0.3s ease;
+        }
+        
+        .sidebar-section.collapsed .sidebar-section-toggle {
+            transform: rotate(-90deg);
+        }
+        
+        .sidebar-section-content {
+            padding: 0 16px 16px 16px;
+            max-height: 1000px;
+            overflow: hidden;
+            transition: max-height 0.3s ease, padding 0.3s ease;
+        }
+        
+        .sidebar-section.collapsed .sidebar-section-content {
+            max-height: 0;
+            padding: 0 16px;
+        }
+        
+        #sidebar.collapsed .sidebar-section-header {
+            justify-content: center;
+        }
+        
+        #sidebar.collapsed .sidebar-section-title,
+        #sidebar.collapsed .sidebar-section-toggle {
+            display: none;
+        }
+        
+        .sidebar-section {
+            padding: 24px 16px;
+            border-bottom: 1px solid #f0f0f0;
+        }
+        
+        .sidebar-section-title {
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            color: #6c757d;
+            margin-bottom: 12px;
+            padding: 0 8px;
+            letter-spacing: 0.5px;
+        }
+        
+        .sidebar-nav-item {
+            display: flex;
+            align-items: center;
+            padding: 12px 16px;
+            margin-bottom: 4px;
+            border-radius: 8px;
+            color: #495057;
+            text-decoration: none;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            border: none;
+            background: transparent;
+            width: 100%;
+            text-align: left;
+            font-size: 14px;
+            font-weight: 500;
+            white-space: nowrap;
+            position: relative;
+        }
+        
+        .sidebar-nav-item:hover {
+            background: #f8f9fa;
+            color: #0d6efd;
+        }
+        
+        .sidebar-nav-item.active {
+            background: #e7f1ff;
+            color: #0d6efd;
+        }
+        
+        .sidebar-nav-item i {
+            font-size: 18px;
+            width: 24px;
+            margin-right: 12px;
+            min-width: 24px;
+        }
+        
+        #sidebar.collapsed .sidebar-nav-item {
+            justify-content: center;
+            padding: 12px 8px;
+        }
+        
+        #sidebar.collapsed .sidebar-nav-item span {
+            display: none;
+        }
+        
+        #sidebar.collapsed .sidebar-nav-item i {
+            margin-right: 0;
+        }
+        
+        /* Tooltip for collapsed sidebar */
+        #sidebar.collapsed .sidebar-nav-item:hover::after {
+            content: attr(data-tooltip);
+            position: absolute;
+            left: 70px;
+            top: 50%;
+            transform: translateY(-50%);
+            background: #333;
+            color: white;
+            padding: 6px 12px;
+            border-radius: 6px;
+            font-size: 13px;
+            white-space: nowrap;
+            z-index: 10000;
+            pointer-events: none;
+        }
+        
+        #mainContent { 
+            transition: margin-left .3s ease; 
+            margin-left: 260px; 
+        }
+        
+        #mainContent.collapsed { 
+            margin-left: 70px; 
+        }
+        
+        #fixedToggleBtn { position: fixed; left: 12px; top: 92px; z-index:1100; display: none; }
+        
+        /* Responsive sidebar */
+        @media (max-width: 768px) {
+            #sidebar {
+                transform: translateX(-100%);
+            }
+            #sidebar.show {
+                transform: translateX(0);
+            }
+            #mainContent {
+                margin-left: 0 !important;
+            }
+            #fixedToggleBtn {
+                display: block;
+            }
+        }
+
+        /* Analytics dashboard styles */
+        .stat-card {
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+
+        .stat-value {
+            font-size: 2.5rem;
+            font-weight: bold;
+            color: #0d6efd;
+        }
+
+        .stat-label {
+            color: #6c757d;
+            font-size: 0.9rem;
+            margin-top: 5px;
+        }
+
+        .analytics-dashboard {
+            display: none;
+        }
+
+        .cases-table {
+            background: white;
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+
+        .cases-table table {
+            margin-bottom: 0;
+        }
+
+        .cases-table tbody tr {
+            border-bottom: 1px solid #e9ecef;
+            cursor: pointer;
+            transition: background-color 0.2s ease;
+        }
+
+        .cases-table tbody tr:hover {
+            background-color: #f8f9fa;
+        }
+
+        .case-patient-name {
+            font-weight: 500;
+            color: #333;
+        }
+
+        .case-concern {
+            color: #6c757d;
+            font-size: 0.9rem;
+        }
+
+        .notification {
+            position: fixed;
+            top: 100px;
+            right: 20px;
+            z-index: 2000;
+            max-width: 400px;
+        }
+
+        .dm-container {
+            border: 1px solid #e9ecef;
+            border-radius: 10px;
+            background: #fff;
+            padding: 12px;
+        }
+
+        .dm-messages {
+            height: 280px;
+            overflow-y: auto;
+            background: #f8f9fa;
+            border-radius: 8px;
+            padding: 12px;
+            margin-bottom: 12px;
+        }
+
+        .dm-message {
+            max-width: 80%;
+            padding: 8px 12px;
+            border-radius: 12px;
+            margin-bottom: 8px;
+            background: #ffffff;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.06);
+        }
+
+        .dm-message.me {
+            margin-left: auto;
+            background: rgba(13,110,253,0.1);
+            border: 1px solid rgba(13,110,253,0.2);
+        }
+
+        .dm-meta {
+            font-size: 0.75rem;
+            color: #6c757d;
+            margin-top: 4px;
+        }
+
+        .notification-list {
+            max-height: 220px;
+            overflow-y: auto;
+        }
     </style>
 </head>
 <body>
     <button id="fixedToggleBtn" class="btn btn-outline-secondary"><i class="bi bi-list"></i></button>
     <div id="sidebar">
-        <div class="mb-3">
-            <button class="btn btn-sm btn-outline-secondary w-100 mb-2 labels" id="docHomeBtn">Home</button>
-            <button class="btn btn-sm btn-outline-secondary w-100 mb-2 labels" id="docPatientsBtn">Patients</button>
-            <button class="btn btn-sm btn-outline-secondary w-100 mb-2 labels" id="docAuditBtn">Audit</button>
+        <!-- Collapse Button -->
+        <button class="sidebar-collapse-btn" id="sidebarCollapseBtn" title="Collapse sidebar">
+            <i class="bi bi-chevron-left"></i>
+        </button>
+        
+        <!-- Main Navigation -->
+        <div class="sidebar-section" data-section="main">
+            <div class="sidebar-section-header">
+                <div class="sidebar-section-title">Main</div>
+                <i class="bi bi-chevron-down sidebar-section-toggle"></i>
+            </div>
+            <div class="sidebar-section-content">
+                <button class="sidebar-nav-item" id="docHomeBtn" data-tooltip="Home">
+                    <i class="bi bi-house"></i>
+                    <span>Home</span>
+                </button>
+                <button class="sidebar-nav-item" id="docAnalyticsBtn" data-tooltip="Analytics">
+                    <i class="bi bi-graph-up"></i>
+                    <span>Analytics</span>
+                </button>
+            </div>
+        </div>
+        
+        <!-- Patient Management -->
+        <div class="sidebar-section" data-section="patients">
+            <div class="sidebar-section-header">
+                <div class="sidebar-section-title">Patient Management</div>
+                <i class="bi bi-chevron-down sidebar-section-toggle"></i>
+            </div>
+            <div class="sidebar-section-content">
+                <button class="sidebar-nav-item" id="docPatientsBtn" data-tooltip="Patients">
+                    <i class="bi bi-people"></i>
+                    <span>Patients</span>
+                </button>
+                <button class="sidebar-nav-item" id="docAuditBtn" data-tooltip="Audit Logs">
+                    <i class="bi bi-file-text"></i>
+                    <span>Audit Logs</span>
+                </button>
+                <button class="sidebar-nav-item" id="docAdherenceBtn" data-tooltip="Medication Adherence">
+                    <i class="bi bi-check2-circle"></i>
+                    <span>Adherence</span>
+                </button>
+                <button class="sidebar-nav-item" id="docPredictiveBtn" data-tooltip="Predictive Alerts">
+                    <i class="bi bi-exclamation-triangle"></i>
+                    <span>Predictive Alerts</span>
+                </button>
+            </div>
+        </div>
+        
+        <!-- Communication -->
+        <div class="sidebar-section" data-section="communication">
+            <div class="sidebar-section-header">
+                <div class="sidebar-section-title">Communication</div>
+                <i class="bi bi-chevron-down sidebar-section-toggle"></i>
+            </div>
+            <div class="sidebar-section-content">
+                <button class="sidebar-nav-item" id="docMessagesBtn" data-tooltip="Messages">
+                    <i class="bi bi-chat-dots"></i>
+                    <span>Messages</span>
+                </button>
+                <button class="sidebar-nav-item" id="docNotificationsBtn" data-tooltip="Notifications">
+                    <i class="bi bi-bell"></i>
+                    <span>Notifications</span>
+                </button>
+            </div>
+        </div>
+        
+        <!-- Settings -->
+        <div class="sidebar-section" data-section="settings">
+            <div class="sidebar-section-header">
+                <div class="sidebar-section-title">Settings</div>
+                <i class="bi bi-chevron-down sidebar-section-toggle"></i>
+            </div>
+            <div class="sidebar-section-content">
+                <button class="sidebar-nav-item" id="docHospitalsBtn" data-tooltip="Hospitals">
+                    <i class="bi bi-hospital"></i>
+                    <span>Hospitals</span>
+                </button>
+            </div>
         </div>
     </div>
     <div class="container my-4">
@@ -32,32 +420,179 @@
         <div class="d-flex justify-content-between align-items-center mb-3">
             <div class="d-flex align-items-center gap-2">
                 <img src="/static/logo.svg" alt="Logo" style="width: 40px; height: 40px;">
-                <h2 class="mb-0">Doctor Alerts</h2>
+                <div>
+                    <h2 class="mb-0">Doctor Alerts</h2>
+                    <div class="text-muted">Welcome, <span id="doctorWelcomeName">Doctor</span></div>
+                </div>
             </div>
-            <div>
-                <button id="logoutBtn" class="btn btn-sm btn-outline-secondary">Clear Key</button>
-            </div>
-        </div>
-
-        <div class="row mb-3">
-            <div class="col-md-6">
-                <label class="form-label">Username</label>
-                <input id="usernameInput" class="form-control" placeholder="doctor username" />
-            </div>
-            <div class="col-md-6">
-                <label class="form-label">Password</label>
-                <input id="passwordInput" type="password" class="form-control" placeholder="password" />
+            <div class="d-flex gap-2">
+                <button id="hospitalPageBtn" class="btn btn-sm btn-outline-primary">Hospital Details</button>
+                <button id="logoutBtn" class="btn btn-sm btn-outline-secondary">Sign Out</button>
             </div>
         </div>
 
         <div class="mb-3">
-            <button id="loginBtn" class="btn btn-success">Login</button>
-            <button id="startPollingBtn" class="btn btn-primary" disabled>Start Polling Alerts</button>
+            <button id="startPollingBtn" class="btn btn-primary">Start Polling Alerts</button>
             <button id="stopPollingBtn" class="btn btn-secondary" disabled>Stop</button>
         </div>
 
         <div id="alertsContainer">
             <p class="text-muted">No alerts yet. Alerts will appear here when patients send emergency messages.</p>
+        </div>
+
+        <hr />
+
+        <h4>Doctor Profile</h4>
+        <div class="card mb-3 p-3">
+            <div class="row g-2">
+                <div class="col-md-6">
+                    <label class="form-label">Professionalism</label>
+                    <input id="docProfessionalism" class="form-control" placeholder="e.g., Consultant Physician" />
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label">Specialization</label>
+                    <input id="docSpecialization" class="form-control" placeholder="e.g., Cardiology" />
+                </div>
+            </div>
+            <div class="row g-2 mt-2">
+                <div class="col-md-4">
+                    <label class="form-label">Experience (years)</label>
+                    <input id="docExperience" type="number" class="form-control" />
+                </div>
+                <div class="col-md-8">
+                    <label class="form-label">Hospital</label>
+                    <select id="docHospital" class="form-select"></select>
+                </div>
+            </div>
+            <div class="row g-2 mt-2">
+                <div class="col-12">
+                    <label class="form-label">Bio</label>
+                    <textarea id="docBio" class="form-control" rows="3" placeholder="Short professional bio"></textarea>
+                </div>
+            </div>
+            <div class="mt-2 d-flex gap-2">
+                <button id="saveDocProfileBtn" class="btn btn-success">Save Profile</button>
+                <button id="refreshDocProfileBtn" class="btn btn-outline-secondary">Refresh</button>
+            </div>
+            <div class="mt-2" id="docProfileResult"></div>
+        </div>
+
+        <div class="card mb-3 p-3">
+            <h5>Hospital Location</h5>
+            <div class="ratio ratio-16x9">
+                <iframe id="hospitalMap" src="" style="border:0" allowfullscreen loading="lazy"></iframe>
+            </div>
+        </div>
+
+        <!-- Analytics Dashboard Section -->
+        <div class="analytics-dashboard" id="analyticsDashboard" style="display:none;">
+            <h4 class="mb-4"><i class="bi bi-graph-up me-2"></i>Practice Analytics Dashboard</h4>
+            
+            <!-- Statistics Cards -->
+            <div class="row">
+                <div class="col-md-6 col-lg-3">
+                    <div class="stat-card">
+                        <i class="bi bi-people-fill" style="font-size: 2rem; color: #0d6efd;"></i>
+                        <div class="stat-value" id="totalPatientsStat">0</div>
+                        <div class="stat-label">Total Patients</div>
+                    </div>
+                </div>
+                <div class="col-md-6 col-lg-3">
+                    <div class="stat-card">
+                        <i class="bi bi-calendar-check-fill" style="font-size: 2rem; color: #198754;"></i>
+                        <div class="stat-value" id="totalAppointmentsStat">0</div>
+                        <div class="stat-label">Total Appointments</div>
+                    </div>
+                </div>
+                <div class="col-md-6 col-lg-3">
+                    <div class="stat-card">
+                        <i class="bi bi-hourglass-split" style="font-size: 2rem; color: #ffc107;"></i>
+                        <div class="stat-value" id="avgResponseTimeStat">0<span style="font-size: 0.5em;">min</span></div>
+                        <div class="stat-label">Avg Response Time</div>
+                    </div>
+                </div>
+                <div class="col-md-6 col-lg-3">
+                    <div class="stat-card">
+                        <i class="bi bi-star-fill" style="font-size: 2rem; color: #dc3545;"></i>
+                        <div class="stat-value" id="satisfactionScoreStat">0<span style="font-size: 0.5em;">%</span></div>
+                        <div class="stat-label">Patient Satisfaction</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Patient Cases Table -->
+            <div class="mb-4">
+                <h5 class="mb-3"><i class="bi bi-file-medical me-2"></i>Patient Cases</h5>
+                <div class="cases-table">
+                    <table class="table table-hover">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Patient Name</th>
+                                <th>Concern/Task</th>
+                                <th>Date</th>
+                                <th>Messages</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="casesList">
+                            <tr>
+                                <td colspan="5" class="text-muted text-center py-4">No patient cases found</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <button id="refreshAnalyticsBtn" class="btn btn-outline-secondary">
+                <i class="bi bi-arrow-clockwise me-2"></i>Refresh Analytics
+            </button>
+        </div>
+
+        <!-- Direct Messages & Notifications -->
+        <div id="docNotificationsSection" style="display:none;">
+            <h4 class="mb-4"><i class="bi bi-bell me-2"></i>Notifications</h4>
+            <div class="row">
+                <div class="col-lg-12 mb-4">
+                    <div class="card">
+                        <div class="card-header">
+                            <i class="bi bi-bell me-2"></i>Your Notifications
+                        </div>
+                        <div class="card-body notification-list" id="doctorNotifications">
+                            <div class="text-muted">No notifications yet.</div>
+                        </div>
+                        <div class="card-footer text-end">
+                            <button id="markAllDoctorNotificationsReadBtn" class="btn btn-sm btn-outline-secondary">Mark all read</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="docMessagesSection" style="display:none;">
+            <h4 class="mb-4"><i class="bi bi-chat-dots me-2"></i>Direct Messages</h4>
+            <div class="row">
+                <div class="col-lg-12 mb-4">
+                    <div class="card">
+                    <div class="card-header">
+                        <i class="bi bi-chat-dots me-2"></i>Direct Messages
+                    </div>
+                    <div class="card-body">
+                        <div class="mb-2">
+                            <label class="form-label">Select Patient</label>
+                            <select id="dmPatientSelect" class="form-select"></select>
+                        </div>
+                        <div class="dm-container">
+                            <div id="dmDoctorMessages" class="dm-messages"></div>
+                            <div class="input-group">
+                                <input type="text" id="dmDoctorInput" class="form-control" placeholder="Type a message..." />
+                                <button id="dmDoctorSendBtn" class="btn btn-primary">Send</button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="card-footer text-muted small">Messages auto-refresh every 5 seconds.</div>
+                </div>
+            </div>
+        </div>
         </div>
 
         <hr />
@@ -111,11 +646,39 @@
         </div>
 
         <hr />
+
+        <h4>Appointments</h4>
+        <div class="card mb-3 p-3">
+            <button id="refreshAppointmentsBtn" class="btn btn-sm btn-outline-secondary">Refresh Appointments</button>
+            <div id="appointmentsList" class="mt-3">
+                <p class="text-muted">No appointments loaded.</p>
+            </div>
+        </div>
         <h5>Audit Log</h5>
         <div class="mb-2">
             <button id="refreshAuditBtn" class="btn btn-sm btn-outline-secondary">Refresh Audit</button>
         </div>
         <div id="auditList" class="mb-4"><p class="text-muted">No audit entries loaded.</p></div>
+
+        <hr />
+
+        <h4 id="doctorAdherenceSection">Medication Adherence (Patients)</h4>
+        <div class="card mb-3 p-3">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+                <div class="text-muted">30-day adherence overview</div>
+                <button id="refreshAdherenceBtn" class="btn btn-sm btn-outline-secondary">Refresh</button>
+            </div>
+            <div id="doctorAdherenceList"><p class="text-muted">No adherence data loaded.</p></div>
+        </div>
+
+        <h4 id="doctorPredictiveAlertsSection">Predictive Health Alerts</h4>
+        <div class="card mb-3 p-3">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+                <div class="text-muted">AI-generated risk indicators (last 30 days)</div>
+                <button id="refreshPredictiveAlertsBtn" class="btn btn-sm btn-outline-secondary">Refresh</button>
+            </div>
+            <div id="doctorPredictiveAlertsList"><p class="text-muted">No predictive alerts loaded.</p></div>
+        </div>
 
         <hr />
 
@@ -129,25 +692,128 @@
     <script>
         let pollInterval = null;
 
-        function getDevKey() {
-            return sessionStorage.getItem('dev_api_key_doctor') || document.getElementById('devKeyInput').value.trim();
+        function getToken() {
+            return sessionStorage.getItem('jwt_token');
         }
 
-        document.getElementById('loginBtn').addEventListener('click', async () => {
-            const username = document.getElementById('usernameInput').value.trim();
-            const password = document.getElementById('passwordInput').value;
-            if (!username || !password) return alert('Enter username and password');
-            try {
-                const resp = await fetch('/users/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username, password }) });
-                const j = await resp.json();
-                if (!resp.ok) return alert('Login failed: ' + (j.error || resp.statusText));
-                sessionStorage.setItem('jwt_token', j.token);
-                alert('Logged in');
-                document.getElementById('startPollingBtn').disabled = false;
-            } catch (e) {
-                alert('Network error');
+        async function requireAuth() {
+            const token = getToken();
+            if (!token) {
+                window.location.href = '/auth';
+                return false;
             }
-        });
+            return true;
+        }
+
+        async function loadWelcome() {
+            const token = getToken();
+            if (!token) return;
+            try {
+                const resp = await fetch('/profile', { headers: { 'Authorization': 'Bearer ' + token } });
+                if (!resp.ok) return;
+                const j = await resp.json();
+                const name = j.full_name || j.username || 'Doctor';
+                document.getElementById('doctorWelcomeName').textContent = name;
+            } catch (e) { /* ignore */ }
+        }
+
+        async function loadHospitals() {
+            try {
+                const resp = await fetch('/hospitals');
+                const j = await resp.json();
+                const sel = document.getElementById('docHospital');
+                sel.innerHTML = '<option value="">-- Select Hospital --</option>';
+                (j.hospitals || []).forEach(h => {
+                    const opt = document.createElement('option');
+                    opt.value = h.id;
+                    opt.textContent = h.name;
+                    opt.dataset.mapQuery = h.map_query || h.address || h.name;
+                    sel.appendChild(opt);
+                });
+            } catch (e) { /* ignore */ }
+        }
+
+        function updateHospitalMap() {
+            const sel = document.getElementById('docHospital');
+            const selected = sel.options[sel.selectedIndex];
+            const query = selected?.dataset?.mapQuery || 'Hospital';
+            const url = `https://www.google.com/maps?q=${encodeURIComponent(query)}&output=embed`;
+            document.getElementById('hospitalMap').src = url;
+        }
+
+        async function loadDoctorProfile() {
+            const token = getToken();
+            if (!token) return;
+            try {
+                const resp = await fetch('/doctor/profile', { headers: { 'Authorization': 'Bearer ' + token } });
+                if (!resp.ok) return;
+                const j = await resp.json();
+                document.getElementById('docProfessionalism').value = j.professionalism || '';
+                document.getElementById('docSpecialization').value = j.specialization || '';
+                document.getElementById('docExperience').value = j.experience_years || '';
+                if (j.hospital_id) {
+                    document.getElementById('docHospital').value = j.hospital_id;
+                    updateHospitalMap();
+                }
+                document.getElementById('docBio').value = j.bio || '';
+            } catch (e) { /* ignore */ }
+        }
+
+        async function saveDoctorProfile() {
+            const token = getToken();
+            if (!token) return alert('Please login');
+            const resultEl = document.getElementById('docProfileResult');
+            resultEl.textContent = '';
+            const body = {
+                professionalism: document.getElementById('docProfessionalism').value.trim(),
+                specialization: document.getElementById('docSpecialization').value.trim(),
+                experience_years: Number(document.getElementById('docExperience').value || 0) || null,
+                hospital_id: document.getElementById('docHospital').value || null,
+                bio: document.getElementById('docBio').value.trim()
+            };
+            try {
+                const resp = await fetch('/doctor/profile', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+                    body: JSON.stringify(body)
+                });
+                const j = await resp.json();
+                if (!resp.ok) { resultEl.textContent = 'Error: ' + (j.error || resp.statusText); return; }
+                resultEl.textContent = 'Profile saved successfully.';
+                updateHospitalMap();
+            } catch (e) { resultEl.textContent = 'Network error'; }
+        }
+
+        async function loadAppointments() {
+            const token = getToken();
+            if (!token) return;
+            const el = document.getElementById('appointmentsList');
+            try {
+                const resp = await fetch('/doctor/appointments', { headers: { 'Authorization': 'Bearer ' + token } });
+                const j = await resp.json();
+                if (!resp.ok) { el.innerHTML = '<div class="text-danger">Failed to load appointments</div>'; return; }
+                renderAppointments(j.appointments || []);
+            } catch (e) {
+                el.innerHTML = '<div class="text-danger">Network error</div>';
+            }
+        }
+
+        function renderAppointments(list) {
+            const el = document.getElementById('appointmentsList');
+            if (!list.length) {
+                el.innerHTML = '<p class="text-muted">No appointments found.</p>';
+                return;
+            }
+            el.innerHTML = list.map(a => `
+                <div class="card mb-2">
+                    <div class="card-body">
+                        <div><strong>${a.patient_name || a.patient_username || 'Patient'}</strong></div>
+                        <div class="text-muted small">${a.appointment_time || ''} • ${a.hospital_name || 'Hospital'}</div>
+                        <div class="mt-2">${a.reason || ''}</div>
+                    </div>
+                </div>
+            `).join('');
+        }
 
         // Claim a session: prompt for patient username or id and call /claim_session
         async function claimSession(sessionId){
@@ -173,7 +839,7 @@
         }
 
         document.getElementById('startPollingBtn').addEventListener('click', () => {
-            const token = sessionStorage.getItem('jwt_token');
+            const token = getToken();
             if (!token) return alert('Please login first');
             document.getElementById('startPollingBtn').disabled = true;
             document.getElementById('stopPollingBtn').disabled = false;
@@ -190,17 +856,14 @@
 
         document.getElementById('logoutBtn').addEventListener('click', () => {
             sessionStorage.removeItem('jwt_token');
-            alert('Logged out.');
-            document.getElementById('startPollingBtn').disabled = true;
-            document.getElementById('stopPollingBtn').disabled = true;
+            sessionStorage.removeItem('user_role');
+            alert('Signed out.');
+            window.location.href = '/auth';
         });
 
         async function pollAlerts() {
-            const key = getDevKey();
-            if (!key) return;
-
             try {
-                const token = sessionStorage.getItem('jwt_token');
+                const token = getToken();
                 const headers = token ? { 'Authorization': 'Bearer ' + token } : {};
                 const resp = await fetch('/doctor/alerts', { headers });
                 if (!resp.ok) {
@@ -225,15 +888,35 @@
             alerts.forEach(a => {
                 const card = document.createElement('div');
                 card.className = 'card mb-2';
+                
+                // Extract location from content if present
+                let locationMatch = null;
+                let displayContent = a.content;
+                if (a.content) {
+                    const match = a.content.match(/Location:\s*([\-\d\.]+),\s*([\-\d\.]+)/);
+                    if (match) {
+                        locationMatch = { lat: parseFloat(match[1]), lng: parseFloat(match[2]) };
+                        displayContent = a.content.replace(/Location:\s*[\-\d\.]+,\s*[\-\d\.]+/, '').trim();
+                    }
+                }
+                
                 card.innerHTML = `
                     <div class="card-body">
                         <div class="d-flex justify-content-between">
-                            <div>
+                            <div class="flex-grow-1">
                                 <strong>${a.patient_name || 'Unknown'}</strong>
                                 <div class="text-muted small">Task: ${a.task || 'N/A'}</div>
-                                <div class="mt-2">${a.content}</div>
+                                <div class="mt-2">${displayContent}</div>
+                                ${locationMatch ? `
+                                    <div class="mt-2 alert alert-info py-2">
+                                        <i class="bi bi-geo-alt-fill"></i> <strong>Patient Location Shared</strong>
+                                        <button class="btn btn-sm btn-primary ms-2" onclick="showPatientLocation(${locationMatch.lat}, ${locationMatch.lng}, '${(a.patient_name || 'Patient').replace(/'/g, "\\'")}')">
+                                            <i class="bi bi-map"></i> View on Map
+                                        </button>
+                                    </div>
+                                ` : ''}
                             </div>
-                            <div class="text-end">
+                            <div class="text-end" style="min-width: 180px;">
                                 <div class="text-muted small">${a.timestamp}</div>
                                 <button class="btn btn-sm btn-outline-primary mt-2" onclick="viewTranscript(${a.session_id})">View Transcript</button>
                                 <button class="btn btn-sm btn-outline-success mt-2 ms-1" onclick="claimSession(${a.session_id})">Claim</button>
@@ -247,9 +930,94 @@
             container.appendChild(list);
         }
 
+        // Show patient location on map
+        window.showPatientLocation = function(lat, lng, patientName) {
+            // Create modal for map
+            const modalHtml = `
+                <div class="modal fade" id="locationModal" tabindex="-1">
+                    <div class="modal-dialog modal-lg">
+                        <div class="modal-content">
+                            <div class="modal-header">
+                                <h5 class="modal-title"><i class="bi bi-geo-alt-fill"></i> ${patientName} - Emergency Location</h5>
+                                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                            </div>
+                            <div class="modal-body">
+                                <div id="patientLocationMap" style="height: 400px; width: 100%; border-radius: 8px;"></div>
+                                <div class="mt-3">
+                                    <p><strong>Coordinates:</strong> ${lat}, ${lng}</p>
+                                    <a href="https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}" target="_blank" class="btn btn-primary">
+                                        <i class="bi bi-navigation"></i> Get Directions
+                                    </a>
+                                    <a href="https://www.google.com/maps/search/?api=1&query=${lat},${lng}" target="_blank" class="btn btn-outline-secondary">
+                                        <i class="bi bi-map"></i> Open in Google Maps
+                                    </a>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            // Remove existing modal if any
+            const existingModal = document.getElementById('locationModal');
+            if (existingModal) existingModal.remove();
+            
+            // Add modal to body
+            document.body.insertAdjacentHTML('beforeend', modalHtml);
+            
+            // Show modal
+            const modal = new bootstrap.Modal(document.getElementById('locationModal'));
+            modal.show();
+            
+            // Initialize map after modal is shown
+            document.getElementById('locationModal').addEventListener('shown.bs.modal', function() {
+                if (typeof google !== 'undefined' && google.maps) {
+                    const mapElement = document.getElementById('patientLocationMap');
+                    const map = new google.maps.Map(mapElement, {
+                        center: { lat: lat, lng: lng },
+                        zoom: 15,
+                        mapTypeId: 'roadmap'
+                    });
+                    
+                    // Add marker for patient location
+                    new google.maps.Marker({
+                        position: { lat: lat, lng: lng },
+                        map: map,
+                        title: patientName + ' Location',
+                        icon: {
+                            path: google.maps.SymbolPath.CIRCLE,
+                            scale: 12,
+                            fillColor: '#DC3545',
+                            fillOpacity: 1,
+                            strokeColor: '#fff',
+                            strokeWeight: 3
+                        },
+                        animation: google.maps.Animation.BOUNCE
+                    });
+                    
+                    // Add circle to show approximate area
+                    new google.maps.Circle({
+                        strokeColor: '#DC3545',
+                        strokeOpacity: 0.8,
+                        strokeWeight: 2,
+                        fillColor: '#DC3545',
+                        fillOpacity: 0.15,
+                        map: map,
+                        center: { lat: lat, lng: lng },
+                        radius: 100  // 100 meters
+                    });
+                } else {
+                    document.getElementById('patientLocationMap').innerHTML = '<div class="alert alert-warning">Google Maps is not available</div>';
+                }
+            }, { once: true });
+        };
+
+        let currentSessionId = null;
+
         async function viewTranscript(sessionId) {
+            currentSessionId = sessionId;
             try {
-                const token = sessionStorage.getItem('jwt_token');
+                const token = getToken();
                 const headers = token ? { 'Authorization': 'Bearer ' + token } : {};
 
                 const resp = await fetch(`/sessions/${sessionId}/messages`, { headers });
@@ -284,10 +1052,32 @@
                 el.innerHTML = `<div><strong>${m.role}</strong> <span class="text-muted small">${m.timestamp}</span></div><div>${escapeHtml(m.content)}</div>`;
                 wrap.appendChild(el);
             });
-            document.getElementById('transcriptContainer').innerHTML = '';
-            document.getElementById('transcriptContainer').appendChild(wrap);
+            const container = document.getElementById('transcriptContainer');
+            container.innerHTML = '';
+            const summaryBlock = document.createElement('div');
+            summaryBlock.className = 'mb-3';
+            summaryBlock.innerHTML = `
+                <button class="btn btn-sm btn-outline-primary" onclick="summarizeSession()">AI Summarize</button>
+                <div id="summaryResult" class="mt-2 small text-muted">No summary yet.</div>
+            `;
+            container.appendChild(summaryBlock);
+            container.appendChild(wrap);
             const filesArea = document.getElementById('attachmentsArea');
             if (filesArea) filesArea.innerHTML = '';
+        }
+
+        async function summarizeSession(){
+            if (!currentSessionId) return;
+            const token = getToken();
+            if (!token) return alert('Please login');
+            const el = document.getElementById('summaryResult');
+            el.textContent = 'Summarizing...';
+            try{
+                const resp = await fetch(`/sessions/${currentSessionId}/summary`, { headers: { 'Authorization': 'Bearer ' + token } });
+                const j = await resp.json();
+                if (!resp.ok) { el.textContent = j.error || resp.statusText; return; }
+                el.textContent = j.summary || 'No summary available.';
+            }catch(e){ el.textContent = 'Network error'; }
         }
 
         function renderFiles(files) {
@@ -408,6 +1198,48 @@
             }
         });
 
+        document.getElementById('hospitalPageBtn').addEventListener('click', () => {
+            window.location.href = '/hospital.html';
+        });
+
+        document.getElementById('docHospitalsBtn').addEventListener('click', () => {
+            window.location.href = '/hospital.html';
+        });
+
+        document.getElementById('saveDocProfileBtn').addEventListener('click', saveDoctorProfile);
+        document.getElementById('refreshDocProfileBtn').addEventListener('click', async () => {
+            await loadHospitals();
+            await loadDoctorProfile();
+        });
+        document.getElementById('docHospital').addEventListener('change', updateHospitalMap);
+        document.getElementById('refreshAppointmentsBtn').addEventListener('click', loadAppointments);
+        document.getElementById('refreshAdherenceBtn').addEventListener('click', loadDoctorAdherence);
+        document.getElementById('refreshPredictiveAlertsBtn').addEventListener('click', loadDoctorPredictiveAlerts);
+
+        document.getElementById('docAdherenceBtn').addEventListener('click', () => {
+            document.getElementById('doctorAdherenceSection').scrollIntoView({ behavior: 'smooth' });
+            loadDoctorAdherence();
+        });
+
+        document.getElementById('docPredictiveBtn').addEventListener('click', () => {
+            document.getElementById('doctorPredictiveAlertsSection').scrollIntoView({ behavior: 'smooth' });
+            loadDoctorPredictiveAlerts();
+        });
+
+        document.addEventListener('DOMContentLoaded', async () => {
+            const ok = await requireAuth();
+            if (!ok) return;
+            await loadWelcome();
+            await loadHospitals();
+            await loadDoctorProfile();
+            updateHospitalMap();
+            await loadAppointments();
+            // Initialize analytics dashboard
+            initAnalyticsListeners();
+            showAnalyticsDashboard();
+            initDoctorDirectMessaging();
+        });
+
         document.getElementById('refreshPatientsBtn').addEventListener('click', () => loadPatients());
 
         document.getElementById('refreshAuditBtn').addEventListener('click', () => loadAudit());
@@ -436,6 +1268,82 @@
             });
             el.innerHTML = '';
             el.appendChild(ul);
+        }
+
+        async function loadDoctorAdherence(){
+            const token = sessionStorage.getItem('jwt_token');
+            const el = document.getElementById('doctorAdherenceList');
+            if(!token){ el.innerHTML = '<div class="text-muted">Login to view adherence.</div>'; return }
+            try{
+                const resp = await fetch('/doctor/medication-adherence', { headers: { 'Authorization': 'Bearer ' + token } });
+                const j = await resp.json();
+                if(!resp.ok){ el.innerHTML = `<div class="alert alert-danger">${j.error||'Failed to load adherence'}</div>`; return }
+                const patients = j.patients || [];
+                if(!patients.length){ el.innerHTML = '<div class="text-muted">No adherence data available.</div>'; return }
+                const rows = patients.map(p => `
+                    <tr>
+                        <td>${escapeHtml(p.patient_name || 'Patient')}</td>
+                        <td>${p.adherence_percent}%</td>
+                        <td>${p.taken}</td>
+                        <td>${p.missed}</td>
+                        <td>${p.skipped}</td>
+                        <td>${p.pending}</td>
+                    </tr>
+                `).join('');
+                el.innerHTML = `
+                    <table class="table table-sm">
+                        <thead>
+                            <tr>
+                                <th>Patient</th>
+                                <th>Adherence</th>
+                                <th>Taken</th>
+                                <th>Missed</th>
+                                <th>Skipped</th>
+                                <th>Pending</th>
+                            </tr>
+                        </thead>
+                        <tbody>${rows}</tbody>
+                    </table>
+                `;
+            }catch(e){
+                el.innerHTML = '<div class="alert alert-danger">Network error loading adherence</div>';
+            }
+        }
+
+        async function loadDoctorPredictiveAlerts(){
+            const token = sessionStorage.getItem('jwt_token');
+            const el = document.getElementById('doctorPredictiveAlertsList');
+            if(!token){ el.innerHTML = '<div class="text-muted">Login to view predictive alerts.</div>'; return }
+            try{
+                const resp = await fetch('/doctor/predictive-alerts', { headers: { 'Authorization': 'Bearer ' + token } });
+                const j = await resp.json();
+                if(!resp.ok){ el.innerHTML = `<div class="alert alert-danger">${j.error||'Failed to load alerts'}</div>`; return }
+                const alerts = j.alerts || [];
+                if(!alerts.length){ el.innerHTML = '<div class="text-muted">No predictive alerts available.</div>'; return }
+                const rows = alerts.map(a => `
+                    <tr>
+                        <td>${escapeHtml(a.patient_name || 'Patient')}</td>
+                        <td>${a.risk_score}</td>
+                        <td><span class="badge bg-${a.risk_level === 'high' ? 'danger' : a.risk_level === 'medium' ? 'warning' : 'success'}">${a.risk_level}</span></td>
+                        <td>${(a.factors || []).map(f => escapeHtml(f)).join(', ')}</td>
+                    </tr>
+                `).join('');
+                el.innerHTML = `
+                    <table class="table table-sm">
+                        <thead>
+                            <tr>
+                                <th>Patient</th>
+                                <th>Risk Score</th>
+                                <th>Level</th>
+                                <th>Factors</th>
+                            </tr>
+                        </thead>
+                        <tbody>${rows}</tbody>
+                    </table>
+                `;
+            }catch(e){
+                el.innerHTML = '<div class="alert alert-danger">Network error loading alerts</div>';
+            }
         }
 
         async function loadPatients(){
@@ -468,16 +1376,457 @@
             if (!text) return '';
             return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
         }
-        // Sidebar toggle wiring for doctor page
+
+        // ==================== ANALYTICS DASHBOARD FUNCTIONS ====================
+
+        async function loadDoctorAnalytics() {
+            const token = getToken();
+            if (!token) return;
+
+            try {
+                const response = await fetch('/doctor/analytics', {
+                    headers: {
+                        'Authorization': 'Bearer ' + token
+                    }
+                });
+
+                if (!response.ok) throw new Error('Failed to load analytics');
+
+                const data = await response.json();
+                
+                // Update stat cards
+                document.getElementById('totalPatientsStat').textContent = data.total_patients || 0;
+                document.getElementById('totalAppointmentsStat').textContent = data.total_appointments || 0;
+                document.getElementById('avgResponseTimeStat').innerHTML = `${data.avg_response_time_minutes || 0}<span style="font-size: 0.5em;">min</span>`;
+                document.getElementById('satisfactionScoreStat').innerHTML = `${data.patient_satisfaction_score || 0}<span style="font-size: 0.5em;">%</span>`;
+
+                // Load patient cases
+                await loadPatientCases();
+
+            } catch (err) {
+                console.error('Error loading analytics:', err);
+                showNotification('Failed to load analytics', 'error');
+            }
+        }
+
+        async function loadPatientCases() {
+            const token = getToken();
+            if (!token) return;
+
+            try {
+                const response = await fetch('/doctor/patient-cases', {
+                    headers: {
+                        'Authorization': 'Bearer ' + token
+                    }
+                });
+
+                if (!response.ok) throw new Error('Failed to load patient cases');
+
+                const data = await response.json();
+                renderPatientCases(data.cases || []);
+
+            } catch (err) {
+                console.error('Error loading patient cases:', err);
+                showNotification('Failed to load patient cases', 'error');
+            }
+        }
+
+        function renderPatientCases(cases) {
+            const tbody = document.getElementById('casesList');
+
+            if (!cases.length) {
+                tbody.innerHTML = '<tr><td colspan="5" class="text-muted text-center py-4">No patient cases found</td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = cases.map(c => `
+                <tr class="cursor-pointer">
+                    <td>
+                        <div class="case-patient-name">${escapeHtml(c.patient_name)}</div>
+                    </td>
+                    <td>
+                        <div class="case-concern">${escapeHtml(c.concern)}</div>
+                    </td>
+                    <td>
+                        <span class="small text-muted">${new Date(c.date).toLocaleDateString()}</span>
+                    </td>
+                    <td>
+                        <span class="badge bg-light text-dark">${c.message_count}</span>
+                    </td>
+                    <td>
+                        <button class="btn btn-sm btn-outline-primary" onclick="viewPatientCase(${c.session_id})">
+                            <i class="bi bi-eye"></i> View
+                        </button>
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        function viewPatientCase(sessionId) {
+            if (!sessionId) {
+                showNotification('No session available for this case', 'warning');
+                return;
+            }
+            viewTranscript(sessionId);
+            const transcript = document.getElementById('transcriptContainer');
+            if (transcript) transcript.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+
+        function showNotification(message, type = 'info') {
+            const alertClass = {
+                'success': 'alert-success',
+                'error': 'alert-danger',
+                'warning': 'alert-warning',
+                'info': 'alert-info'
+            }[type] || 'alert-info';
+
+            const notification = document.createElement('div');
+            notification.className = `alert ${alertClass} alert-dismissible fade show notification`;
+            notification.innerHTML = `
+                ${message}
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            `;
+            document.body.appendChild(notification);
+
+            setTimeout(() => {
+                notification.remove();
+            }, 5000);
+        }
+
+        // Show analytics dashboard when home button is clicked
+        function showAnalyticsDashboard() {
+            // Hide all sections first
+            const sections = ['docNotificationsSection', 'docMessagesSection'];
+            sections.forEach(id => {
+                const el = document.getElementById(id);
+                if (el) el.style.display = 'none';
+            });
+            
+            const analyticsDashboard = document.getElementById('analyticsDashboard');
+            if (analyticsDashboard) {
+                analyticsDashboard.style.display = 'block';
+                loadDoctorAnalytics();
+            }
+            
+            // Set active nav item
+            document.querySelectorAll('.sidebar-nav-item').forEach(item => {
+                item.classList.remove('active');
+            });
+            document.getElementById('docHomeBtn')?.classList.add('active');
+        }
+
+        // Initialize analytics event listeners
+        function initAnalyticsListeners() {
+            const refreshAnalyticsBtn = document.getElementById('refreshAnalyticsBtn');
+            if (refreshAnalyticsBtn) {
+                refreshAnalyticsBtn.addEventListener('click', () => {
+                    loadDoctorAnalytics();
+                    showNotification('Analytics refreshed', 'success');
+                });
+            }
+        }
+
+        // ==================== PHASE 3: DIRECT MESSAGES & NOTIFICATIONS ====================
+        let dmDoctorPollingTimer = null;
+        let currentDmPatientId = null;
+
+        async function initDoctorDirectMessaging() {
+            await loadDmPatients();
+            const dmSendBtn = document.getElementById('dmDoctorSendBtn');
+            const dmInput = document.getElementById('dmDoctorInput');
+            const markAllBtn = document.getElementById('markAllDoctorNotificationsReadBtn');
+
+            if (dmSendBtn) dmSendBtn.addEventListener('click', sendDoctorDirectMessage);
+            if (dmInput) {
+                dmInput.addEventListener('keypress', (e) => {
+                    if (e.key === 'Enter') sendDoctorDirectMessage();
+                });
+            }
+            if (markAllBtn) markAllBtn.addEventListener('click', markAllDoctorNotificationsRead);
+
+            if (!dmDoctorPollingTimer) {
+                dmDoctorPollingTimer = setInterval(() => {
+                    if (currentDmPatientId) loadDoctorMessages();
+                    loadDoctorNotifications();
+                }, 5000);
+            }
+
+            loadDoctorNotifications();
+        }
+
+        async function loadDmPatients() {
+            const token = getToken();
+            if (!token) return;
+            const select = document.getElementById('dmPatientSelect');
+            if (!select) return;
+
+            try {
+                const resp = await fetch('/doctor/patients', { headers: { 'Authorization': 'Bearer ' + token } });
+                const data = await resp.json();
+                if (!resp.ok) throw new Error(data.error || 'Failed to load patients');
+
+                let threads = [];
+                try {
+                    const threadResp = await fetch('/messages/threads', { headers: { 'Authorization': 'Bearer ' + token } });
+                    const threadData = await threadResp.json();
+                    if (threadResp.ok) threads = threadData.threads || [];
+                } catch (e) { /* ignore thread fetch */ }
+
+                const patients = data.patients || [];
+                const options = new Map();
+                patients.forEach(p => {
+                    options.set(p.id, {
+                        id: p.id,
+                        label: p.full_name || p.username || 'Patient'
+                    });
+                });
+                threads.forEach(t => {
+                    if (!t.other_user_id) return;
+                    if (!options.has(t.other_user_id)) {
+                        options.set(t.other_user_id, {
+                            id: t.other_user_id,
+                            label: t.other_user_name || 'User'
+                        });
+                    }
+                });
+
+                select.innerHTML = '';
+                Array.from(options.values()).forEach(item => {
+                    const opt = document.createElement('option');
+                    opt.value = item.id;
+                    opt.textContent = item.label;
+                    select.appendChild(opt);
+                });
+
+                currentDmPatientId = select.value ? Number(select.value) : null;
+                select.addEventListener('change', () => {
+                    currentDmPatientId = select.value ? Number(select.value) : null;
+                    loadDoctorMessages();
+                });
+
+                if (currentDmPatientId) loadDoctorMessages();
+            } catch (e) {
+                showNotification('Failed to load patients', 'error');
+            }
+        }
+
+        async function loadDoctorMessages() {
+            const token = getToken();
+            if (!token || !currentDmPatientId) return;
+            const dmMessages = document.getElementById('dmDoctorMessages');
+            if (!dmMessages) return;
+
+            try {
+                const resp = await fetch(`/messages?other_user_id=${currentDmPatientId}`, {
+                    headers: { 'Authorization': 'Bearer ' + token }
+                });
+                const data = await resp.json();
+                if (!resp.ok) throw new Error(data.error || 'Failed to load messages');
+
+                dmMessages.innerHTML = '';
+                (data.messages || []).forEach(m => {
+                    const bubble = document.createElement('div');
+                    bubble.className = 'dm-message' + (m.sender_id === (getTokenUserId() || -1) ? ' me' : '');
+                    bubble.innerHTML = `<div>${escapeHtml(m.message_text || '')}</div><div class="dm-meta">${new Date(m.created_at).toLocaleString()}</div>`;
+                    dmMessages.appendChild(bubble);
+                });
+                dmMessages.scrollTop = dmMessages.scrollHeight;
+
+                await fetch('/messages/mark-read', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+                    body: JSON.stringify({ other_user_id: currentDmPatientId })
+                });
+            } catch (e) {
+                showNotification('Failed to load messages', 'error');
+            }
+        }
+
+        async function sendDoctorDirectMessage() {
+            const token = getToken();
+            const input = document.getElementById('dmDoctorInput');
+            if (!token || !currentDmPatientId || !input) return;
+            const text = input.value.trim();
+            if (!text) return;
+
+            try {
+                const resp = await fetch('/messages/send', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+                    body: JSON.stringify({ recipient_id: currentDmPatientId, message_text: text })
+                });
+                const data = await resp.json();
+                if (!resp.ok) throw new Error(data.error || 'Failed to send message');
+                input.value = '';
+                loadDoctorMessages();
+            } catch (e) {
+                showNotification('Failed to send message', 'error');
+            }
+        }
+
+        async function loadDoctorNotifications() {
+            const token = getToken();
+            if (!token) return;
+            const container = document.getElementById('doctorNotifications');
+            if (!container) return;
+
+            try {
+                const resp = await fetch('/notifications?unread=1', { headers: { 'Authorization': 'Bearer ' + token } });
+                const data = await resp.json();
+                if (!resp.ok) throw new Error(data.error || 'Failed to load notifications');
+
+                const items = data.notifications || [];
+                if (!items.length) {
+                    container.innerHTML = '<div class="text-muted">No notifications yet.</div>';
+                    return;
+                }
+
+                container.innerHTML = items.map(n => `
+                    <div class="border-bottom pb-2 mb-2">
+                        <div class="fw-semibold">${escapeHtml(n.title || 'Notification')}</div>
+                        <div class="small text-muted">${escapeHtml(n.body || '')}</div>
+                        <div class="small text-muted">${new Date(n.created_at).toLocaleString()}</div>
+                    </div>
+                `).join('');
+            } catch (e) {
+                container.innerHTML = '<div class="text-danger">Failed to load notifications.</div>';
+            }
+        }
+
+        async function markAllDoctorNotificationsRead() {
+            const token = getToken();
+            if (!token) return;
+            try {
+                await fetch('/notifications/mark-read', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+                    body: JSON.stringify({})
+                });
+                loadDoctorNotifications();
+            } catch (e) {
+                showNotification('Failed to mark notifications read', 'error');
+            }
+        }
+
+        function getTokenUserId() {
+            const token = getToken();
+            if (!token) return null;
+            try {
+                const payload = JSON.parse(atob(token.split('.')[1]));
+                return payload.sub || null;
+            } catch (e) {
+                return null;
+            }
+        }
+
+        // Sidebar navigation for doctor page
         (function(){
             const fixedToggleBtn = document.getElementById('fixedToggleBtn');
             const sidebar = document.getElementById('sidebar');
             const mainEl = document.getElementById('mainContent');
-            try { const collapsed = sessionStorage.getItem('sidebar_collapsed') === '1'; if (collapsed) { sidebar.classList.add('collapsed'); mainEl.classList.add('collapsed'); } } catch(e){}
-            fixedToggleBtn?.addEventListener('click', () => { sidebar.classList.toggle('collapsed'); mainEl.classList.toggle('collapsed'); try{ sessionStorage.setItem('sidebar_collapsed', sidebar.classList.contains('collapsed') ? '1' : '0'); }catch(e){} });
-            document.getElementById('docPatientsBtn')?.addEventListener('click', ()=> loadPatients());
-            document.getElementById('docAuditBtn')?.addEventListener('click', ()=> loadAudit());
-            document.getElementById('docHomeBtn')?.addEventListener('click', ()=> location.href = '/');
+            
+            // Sidebar collapse functionality
+            const sidebarCollapseBtn = document.getElementById('sidebarCollapseBtn');
+            
+            // Load collapse state from localStorage
+            const savedCollapseState = localStorage.getItem('doc_sidebar_collapsed') === 'true';
+            if (savedCollapseState) {
+                sidebar.classList.add('collapsed');
+                mainEl.classList.add('collapsed');
+            }
+            
+            // Sidebar collapse button handler
+            sidebarCollapseBtn?.addEventListener('click', () => {
+                sidebar.classList.toggle('collapsed');
+                mainEl.classList.toggle('collapsed');
+                localStorage.setItem('doc_sidebar_collapsed', sidebar.classList.contains('collapsed'));
+            });
+            
+            // Accordion section toggle
+            document.querySelectorAll('.sidebar-section-header').forEach(header => {
+                header.addEventListener('click', function() {
+                    const section = this.parentElement;
+                    const isCollapsed = sidebar.classList.contains('collapsed');
+                    
+                    // Don't toggle sections when sidebar is collapsed
+                    if (isCollapsed) return;
+                    
+                    section.classList.toggle('collapsed');
+                    
+                    // Save section state
+                    const sectionName = section.dataset.section;
+                    if (sectionName) {
+                        localStorage.setItem(`doc_section_${sectionName}_collapsed`, section.classList.contains('collapsed'));
+                    }
+                });
+            });
+            
+            // Restore section collapse states
+            document.querySelectorAll('.sidebar-section').forEach(section => {
+                const sectionName = section.dataset.section;
+                if (sectionName) {
+                    const isCollapsed = localStorage.getItem(`doc_section_${sectionName}_collapsed`) === 'true';
+                    if (isCollapsed) {
+                        section.classList.add('collapsed');
+                    }
+                }
+            });
+            
+            // Helper function to set active nav item
+            function setActiveDocNavItem(itemId) {
+                document.querySelectorAll('.sidebar-nav-item').forEach(item => {
+                    item.classList.remove('active');
+                });
+                const activeItem = document.getElementById(itemId);
+                if (activeItem) activeItem.classList.add('active');
+            }
+            
+            // Helper functions for section management
+            function hideAllDocSections() {
+                const sections = ['analyticsDashboard', 'docNotificationsSection', 'docMessagesSection'];
+                sections.forEach(id => {
+                    const el = document.getElementById(id);
+                    if (el) el.style.display = 'none';
+                });
+            }
+            
+            function showDocSection(sectionId, navItemId) {
+                hideAllDocSections();
+                const el = document.getElementById(sectionId);
+                if (el) el.style.display = 'block';
+                if (navItemId) setActiveDocNavItem(navItemId);
+            }
+            
+            // Sidebar navigation handlers
+            document.getElementById('docHomeBtn')?.addEventListener('click', ()=> {
+                showAnalyticsDashboard();
+                setActiveDocNavItem('docHomeBtn');
+            });
+            document.getElementById('docAnalyticsBtn')?.addEventListener('click', ()=> {
+                showDocSection('analyticsDashboard', 'docAnalyticsBtn');
+                loadDoctorAnalytics();
+            });
+            document.getElementById('docPatientsBtn')?.addEventListener('click', ()=> {
+                loadPatients();
+                setActiveDocNavItem('docPatientsBtn');
+            });
+            document.getElementById('docMessagesBtn')?.addEventListener('click', ()=> {
+                showDocSection('docMessagesSection', 'docMessagesBtn');
+                loadDmPatients();
+            });
+            document.getElementById('docNotificationsBtn')?.addEventListener('click', ()=> {
+                showDocSection('docNotificationsSection', 'docNotificationsBtn');
+                loadDoctorNotifications();
+            });
+            document.getElementById('docAuditBtn')?.addEventListener('click', ()=> {
+                loadAudit();
+                setActiveDocNavItem('docAuditBtn');
+            });
+            
+            // Mobile sidebar toggle (for small screens)
+            fixedToggleBtn?.addEventListener('click', () => {
+                sidebar.classList.toggle('show');
+            });
         })();
     </script>
 </body>

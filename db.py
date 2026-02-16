@@ -1,7 +1,9 @@
-"""MySQL database utilities for the Medical AI Assistant."""
+"""MySQL/PostgreSQL database utilities for the Medical AI Assistant."""
 
 import os
 import pymysql
+import psycopg2
+from psycopg2.extras import DictCursor as PgDictCursor
 from flask import g
 from dotenv import load_dotenv
 from urllib.parse import urlparse
@@ -17,48 +19,70 @@ DB_PASSWORD = os.environ.get("DB_PASSWORD", "")
 DB_NAME = os.environ.get("DB_NAME", "medical_ai")
 
 def parse_database_url(url):
-    """Parse Railway's DATABASE_URL format: mysql://user:pass@host:port/db"""
+    """Parse DATABASE_URL format (MySQL or PostgreSQL)
+    
+    Supports:
+    - MySQL: mysql://user:pass@host:port/db
+    - PostgreSQL: postgresql://user:pass@host:port/db
+    """
     parsed = urlparse(url)
-    return {
+    config = {
+        'engine': parsed.scheme,  # 'mysql' or 'postgresql'
         'host': parsed.hostname,
-        'port': parsed.port or 3306,
+        'port': parsed.port,
         'user': parsed.username,
         'password': parsed.password,
         'db': parsed.path[1:] if parsed.path else 'medical_ai'
     }
+    
+    # Set default ports if not specified
+    if not config['port']:
+        config['port'] = 5432 if config['engine'] == 'postgresql' else 3306
+    
+    return config
 
 
 def db_connect():
-    """Connect to database - supports both local env vars and Railway DATABASE_URL"""
+    """Connect to database - supports Render (PostgreSQL), Railway (MySQL), and local (MySQL)"""
     
-    # Try to parse Railway's DATABASE_URL first
+    # Try to parse DATABASE_URL first (used by Render and Railway)
     database_url = os.environ.get('DATABASE_URL')
     
     if database_url:
-        # Using Railway's DATABASE_URL
+        # Parse the database URL
         config = parse_database_url(database_url)
-        host = config['host']
-        user = config['user']
-        password = config['password']
-        db = config['db']
-        port = config['port']
+        
+        if config['engine'] == 'postgresql':
+            # Render uses PostgreSQL
+            return psycopg2.connect(
+                host=config['host'],
+                user=config['user'],
+                password=config['password'],
+                database=config['db'],
+                port=config['port']
+            )
+        else:
+            # Railway or other MySQL provider
+            return pymysql.connect(
+                host=config['host'],
+                user=config['user'],
+                password=config['password'],
+                database=config['db'],
+                port=config['port'],
+                cursorclass=pymysql.cursors.DictCursor,
+                autocommit=False,
+            )
     else:
-        # Fall back to individual environment variables (local development)
-        host = DB_HOST
-        user = DB_USER
-        password = DB_PASSWORD
-        db = DB_NAME
-        port = DB_PORT
-    
-    return pymysql.connect(
-        host=host,
-        user=user,
-        password=password,
-        database=db,
-        port=port,
-        cursorclass=pymysql.cursors.DictCursor,
-        autocommit=False,
-    )
+        # Fall back to individual environment variables (local development with MySQL)
+        return pymysql.connect(
+            host=DB_HOST,
+            user=DB_USER,
+            password=DB_PASSWORD,
+            database=DB_NAME,
+            port=DB_PORT,
+            cursorclass=pymysql.cursors.DictCursor,
+            autocommit=False,
+        )
     
 def get_db():
     db = getattr(g, "db", None)
@@ -68,16 +92,8 @@ def get_db():
 
 
 def init_db():
-    # Ensure database exists
+    # Initialize database - supports both MySQL and PostgreSQL
     database_url = os.environ.get('DATABASE_URL')
-    
-    if database_url:
-        config = parse_database_url(database_url)
-        host = config['host']
-        user = config['user']
-        password = config['password']
-        port = config['port']
-        db_name = config['db']
     else:
         host = DB_HOST
         user = DB_USER

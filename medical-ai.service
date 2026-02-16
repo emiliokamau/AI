@@ -1,0 +1,75 @@
+# Medical AI Assistant - Systemd Service File
+#
+# Installation:
+#   1. Copy this file to: sudo cp medical-ai.service /etc/systemd/system/
+#   2. Reload systemd: sudo systemctl daemon-reload
+#   3. Enable service: sudo systemctl enable medical-ai.service
+#   4. Start service: sudo systemctl start medical-ai.service
+#   5. Check status: sudo systemctl status medical-ai.service
+#
+# Usage:
+#   sudo systemctl start|stop|restart|status medical-ai.service
+#   journalctl -u medical-ai.service -f  (follow logs)
+#
+# Location: /etc/systemd/system/medical-ai.service
+
+[Unit]
+Description=Medical AI Assistant Flask Application
+Documentation=file:///home/medical-ai/PRODUCTION_DEPLOYMENT.md
+After=network.target mysql.service
+
+# Restart policy: if service crashes, restart immediately
+# Type: simple means the service is running in foreground
+
+[Service]
+Type=simple
+User=medical-ai
+Group=medical-ai
+WorkingDirectory=/home/medical-ai/app
+
+# Load environment from .env file
+EnvironmentFile=/home/medical-ai/app/.env
+
+# Ensure /var/run/medical-ai exists
+ExecStartPre=/bin/mkdir -p /var/run/medical-ai
+ExecStartPre=/bin/chown -R medical-ai:medical-ai /var/run/medical-ai
+
+# Start Gunicorn with configuration
+ExecStart=/home/medical-ai/app/venv/bin/gunicorn \
+    --config /home/medical-ai/app/gunicorn_config.py \
+    --pid /var/run/medical-ai/gunicorn.pid \
+    --access-logfile /var/log/medical-ai/access.log \
+    --error-logfile /var/log/medical-ai/error.log \
+    app:app
+
+# Restart policy
+Restart=always
+RestartSec=10
+
+# Process management
+KillMode=mixed
+KillSignal=SIGTERM
+SendSIGKILL=yes
+
+# Timeouts
+TimeoutStartSec=300
+TimeoutStopSec=30
+
+# Security hardening
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/var/log/medical-ai /var/run/medical-ai /home/medical-ai/app/uploads
+
+# Resource limits
+LimitNOFILE=65535
+LimitNPROC=32768
+
+# Standard output and error
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=medical-ai
+
+[Install]
+WantedBy=multi-user.target
