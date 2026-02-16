@@ -1,12 +1,8 @@
 {
   "name": "medical-ai-frontend",
   "version": 2,
-  "public": false,
-  "buildCommand": "echo 'Static site build'",
-  "outputDirectory": ".",
   "cleanUrls": true,
   "trailingSlash": false,
-  "framework": null,
   "headers": [
     {
       "source": "/(.*)",
