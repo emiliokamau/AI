@@ -2124,6 +2124,282 @@ def recommend_doctor():
     })
 
 
+# ==================== PHASE 2: VIDEO CONSULTATION & AVAILABILITY ====================
+
+def generate_google_meet_link():
+    """Generate a unique Google Meet link (simple approach without Calendar API)."""
+    import uuid
+    # In production, you'd use Google Calendar API to create actual Meet links
+    # For now, return a meet link format: https://meet.google.com/{unique-id}
+    unique_id = str(uuid.uuid4())[:12]
+    return f"https://meet.google.com/{unique_id}"
+
+
+@app.route('/doctor/availability', methods=['GET', 'POST', 'PUT'])
+def doctor_availability():
+    """Get or set doctor's available time slots."""
+    current_user = get_current_user()
+    if not current_user:
+        return jsonify({'error': 'Unauthorized'}), 401
+    
+    uid = current_user.get('id') or current_user.get('sub')
+    
+    if current_user.get('role') != 'doctor' and current_user.get('role') != 'dev':
+        return jsonify({'error': 'Only doctors can manage availability'}), 403
+    
+    db = get_db()
+    cur = db.cursor()
+    
+    if request.method == 'GET':
+        # Get doctor's availability
+        cur.execute(
+            """
+            SELECT id, day_of_week, start_time, end_time, is_available,
+                   consultation_type, max_patients_per_slot, slot_duration_minutes
+            FROM doctor_availability
+            WHERE doctor_user_id = %s
+            ORDER BY day_of_week ASC, start_time ASC
+            """,
+            (uid,)
+        )
+        rows = cur.fetchall()
+        return jsonify({
+            'availability': [dict(row) for row in rows] if rows else [],
+            'days': {0: 'Monday', 1: 'Tuesday', 2: 'Wednesday', 3: 'Thursday', 
+                    4: 'Friday', 5: 'Saturday', 6: 'Sunday'}
+        })
+    
+    elif request.method == 'POST':
+        # Add new availability slot
+        data = request.get_json() or {}
+        day_of_week = data.get('day_of_week')
+        start_time = data.get('start_time')
+        end_time = data.get('end_time')
+        consultation_type = data.get('consultation_type', 'in-person')
+        slot_duration = data.get('slot_duration_minutes', 30)
+        
+        if day_of_week is None or not start_time or not end_time:
+            return jsonify({'error': 'day_of_week, start_time, end_time required'}), 400
+        
+        try:
+            cur.execute(
+                """
+                INSERT INTO doctor_availability 
+                (doctor_user_id, day_of_week, start_time, end_time, consultation_type, 
+                 slot_duration_minutes, is_available, created_at, updated_at)
+                VALUES (%s, %s, %s, %s, %s, %s, TRUE, NOW(), NOW())
+                """,
+                (uid, day_of_week, start_time, end_time, consultation_type, slot_duration)
+            )
+            db.commit()
+            return jsonify({'status': 'ok', 'message': 'Availability slot added'})
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+    
+    elif request.method == 'PUT':
+        # Update availability slot
+        data = request.get_json() or {}
+        slot_id = data.get('slot_id')
+        is_available = data.get('is_available')
+        
+        if not slot_id:
+            return jsonify({'error': 'slot_id required'}), 400
+        
+        try:
+            cur.execute(
+                "UPDATE doctor_availability SET is_available = %s, updated_at = NOW() WHERE id = %s AND doctor_user_id = %s",
+                (is_available, slot_id, uid)
+            )
+            db.commit()
+            return jsonify({'status': 'ok', 'message': 'Availability updated'})
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+
+
+@app.route('/doctor/<int:doctor_id>/available-slots', methods=['POST'])
+def get_doctor_available_slots(doctor_id):
+    """Get available time slots for a specific doctor."""
+    data = request.get_json() or {}
+    date_str = data.get('date')  # Format: YYYY-MM-DD
+    
+    if not date_str:
+        return jsonify({'error': 'date required (YYYY-MM-DD)'}), 400
+    
+    try:
+        from datetime import datetime, timedelta
+        requested_date = datetime.fromisoformat(date_str)
+        day_of_week = requested_date.weekday()
+    except:
+        return jsonify({'error': 'Invalid date format'}), 400
+    
+    db = get_db()
+    cur = db.cursor()
+    
+    # Get doctor's availability for this day
+    cur.execute(
+        """
+        SELECT id, start_time, end_time, slot_duration_minutes
+        FROM doctor_availability
+        WHERE doctor_user_id = %s AND day_of_week = %s AND is_available = TRUE
+        """,
+        (doctor_id, day_of_week)
+    )
+    
+    availability = cur.fetchall()
+    
+    if not availability:
+        return jsonify({'slots': [], 'message': 'Doctor not available on this day'})
+    
+    # Generate time slots
+    slots = []
+    for avail in availability:
+        start = datetime.combine(requested_date.date(), avail['start_time'])
+        end = datetime.combine(requested_date.date(), avail['end_time'])
+        duration = avail['slot_duration_minutes']
+        
+        current_slot = start
+        while current_slot + timedelta(minutes=duration) <= end:
+            slots.append({
+                'start_time': current_slot.isoformat(),
+                'end_time': (current_slot + timedelta(minutes=duration)).isoformat()
+            })
+            current_slot += timedelta(minutes=duration)
+    
+    return jsonify({'slots': slots, 'date': date_str})
+
+
+@app.route('/schedule-video-consultation', methods=['POST'])
+def schedule_video_consultation():
+    """Schedule a video consultation (telemedicine appointment) with a doctor."""
+    current_user = get_current_user()
+    if not current_user:
+        return jsonify({'error': 'Unauthorized'}), 401
+    
+    uid = current_user.get('id') or current_user.get('sub')
+    data = request.get_json() or {}
+    
+    doctor_id = data.get('doctor_id')
+    start_time = data.get('start_time')
+    duration_minutes = data.get('duration_minutes', 30)
+    reason = data.get('reason', 'Video consultation')
+    appointment_id = data.get('appointment_id')
+    
+    if not doctor_id or not start_time:
+        return jsonify({'error': 'doctor_id and start_time required'}), 400
+    
+    db = get_db()
+    cur = db.cursor()
+    
+    try:
+        start_dt = datetime.fromisoformat(start_time)
+        end_dt = start_dt + timedelta(minutes=duration_minutes)
+        
+        # Generate Google Meet link
+        meet_link = generate_google_meet_link()
+        
+        # Create video consultation record
+        cur.execute(
+            """
+            INSERT INTO video_consultations
+            (doctor_user_id, patient_user_id, start_time, end_time, duration_minutes,
+             google_meet_link, consultation_type, status, created_at, updated_at, appointment_id)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, NOW(), NOW(), %s)
+            """,
+            (doctor_id, uid, start_dt, end_dt, duration_minutes, 
+             meet_link, 'video', 'scheduled', appointment_id)
+        )
+        
+        db.commit()
+        
+        # Get doctor info for response
+        cur.execute("SELECT full_name FROM users WHERE id = %s", (doctor_id,))
+        doctor_row = cur.fetchone()
+        doctor_name = doctor_row['full_name'] if doctor_row else 'Doctor'
+        
+        return jsonify({
+            'status': 'ok',
+            'message': 'Video consultation scheduled',
+            'google_meet_link': meet_link,
+            'consultation_details': {
+                'doctor_name': doctor_name,
+                'start_time': start_dt.isoformat(),
+                'end_time': end_dt.isoformat(),
+                'duration_minutes': duration_minutes,
+                'meet_link': meet_link
+            }
+        })
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/my-video-consultations', methods=['GET'])
+def my_video_consultations():
+    """Get patient's upcoming video consultations."""
+    current_user = get_current_user()
+    if not current_user:
+        return jsonify({'error': 'Unauthorized'}), 401
+    
+    uid = current_user.get('id') or current_user.get('sub')
+    db = get_db()
+    cur = db.cursor()
+    
+    cur.execute(
+        """
+        SELECT vc.id, vc.start_time, vc.end_time, vc.duration_minutes,
+               vc.google_meet_link, vc.status,
+               d.full_name AS doctor_name, dp.specialization
+        FROM video_consultations vc
+        LEFT JOIN users d ON vc.doctor_user_id = d.id
+        LEFT JOIN doctor_profiles dp ON d.id = dp.user_id
+        WHERE vc.patient_user_id = %s AND vc.status = 'scheduled'
+        ORDER BY vc.start_time ASC
+        """,
+        (uid,)
+    )
+    
+    consultations = cur.fetchall()
+    return jsonify({
+        'consultations': [dict(vc) for vc in consultations] if consultations else []
+    })
+
+
+@app.route('/doctor/video-consultations', methods=['GET'])
+def doctor_video_consultations():
+    """Get doctor's upcoming video consultations."""
+    current_user = get_current_user()
+    if not current_user:
+        return jsonify({'error': 'Unauthorized'}), 401
+    
+    uid = current_user.get('id') or current_user.get('sub')
+    
+    if current_user.get('role') not in ('doctor', 'dev'):
+        return jsonify({'error': 'Forbidden'}), 403
+    
+    db = get_db()
+    cur = db.cursor()
+    
+    cur.execute(
+        """
+        SELECT vc.id, vc.start_time, vc.end_time, vc.duration_minutes,
+               vc.google_meet_link, vc.status, vc.notes,
+               p.full_name AS patient_name, p.username,
+               u.age, u.gender, u.contact
+        FROM video_consultations vc
+        LEFT JOIN users p ON vc.patient_user_id = p.id
+        LEFT JOIN users u ON p.id = u.id
+        WHERE vc.doctor_user_id = %s AND vc.status = 'scheduled'
+        ORDER BY vc.start_time ASC
+        """,
+        (uid,)
+    )
+    
+    consultations = cur.fetchall()
+    return jsonify({
+        'consultations': [dict(vc) for vc in consultations] if consultations else []
+    })
+
+
 @app.route('/appointments', methods=['GET', 'POST'])
 def appointments():
     current_user = get_current_user()

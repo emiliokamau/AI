@@ -331,6 +331,50 @@ def init_db():
     )
     cur.execute(
         """
+        CREATE TABLE IF NOT EXISTS doctor_availability (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            doctor_user_id INT NOT NULL,
+            day_of_week INT DEFAULT 0,
+            start_time TIME,
+            end_time TIME,
+            is_available BOOLEAN DEFAULT TRUE,
+            consultation_type VARCHAR(32),
+            max_patients_per_slot INT DEFAULT 1,
+            slot_duration_minutes INT DEFAULT 30,
+            created_at DATETIME,
+            updated_at DATETIME,
+            FOREIGN KEY (doctor_user_id) REFERENCES users(id),
+            INDEX idx_doctor_day (doctor_user_id, day_of_week)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        """
+    )
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS video_consultations (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            appointment_id INT,
+            doctor_user_id INT NOT NULL,
+            patient_user_id INT NOT NULL,
+            consultation_type VARCHAR(32),
+            google_meet_link VARCHAR(500),
+            start_time DATETIME,
+            end_time DATETIME,
+            duration_minutes INT DEFAULT 30,
+            status VARCHAR(32),
+            recording_link VARCHAR(500),
+            notes TEXT,
+            created_at DATETIME,
+            updated_at DATETIME,
+            FOREIGN KEY (doctor_user_id) REFERENCES users(id),
+            FOREIGN KEY (patient_user_id) REFERENCES users(id),
+            FOREIGN KEY (appointment_id) REFERENCES appointments(id),
+            INDEX idx_doctor_patient (doctor_user_id, patient_user_id),
+            INDEX idx_start_time (start_time)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        """
+    )
+    cur.execute(
+        """
         CREATE TABLE IF NOT EXISTS analytics_events (
             id INT AUTO_INCREMENT PRIMARY KEY,
             user_id INT,
