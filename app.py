@@ -1855,6 +1855,275 @@ def update_hospital_location(hospital_id):
         return jsonify({'error': str(e)}), 500
 
 
+# ==================== PHASE 3: AI-POWERED DOCTOR MATCHING ====================
+
+@app.route('/location/update', methods=['POST'])
+def update_patient_location():
+    """Store patient's current location for doctor matching."""
+    current_user = get_current_user()
+    if not current_user:
+        return jsonify({'error': 'Unauthorized'}), 401
+
+    uid = current_user.get('id') or current_user.get('sub')
+    data = request.get_json() or {}
+    
+    latitude = data.get('latitude')
+    longitude = data.get('longitude')
+    permission_granted = data.get('permission_granted', True)
+    
+    if latitude is None or longitude is None:
+        return jsonify({'error': 'latitude and longitude required'}), 400
+
+    db = get_db()
+    cur = db.cursor()
+    
+    try:
+        cur.execute(
+            """
+            UPDATE users 
+            SET latitude = %s, longitude = %s, location_updated_at = NOW(), 
+                location_permission_granted = %s
+            WHERE id = %s
+            """,
+            (latitude, longitude, permission_granted, uid)
+        )
+        db.commit()
+        return jsonify({'status': 'ok', 'message': 'Location updated successfully'})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+def classify_symptoms_with_ai(symptom_text):
+    """Use Gemini AI to classify patient symptoms to medical specializations."""
+    if not assistant.api_key:
+        return None
+    
+    prompt = f"""
+    Patient symptoms: {symptom_text}
+    
+    Classify the patient's condition into ONE primary medical specialization from this list:
+    - Cardiology (heart disease, chest pain, hypertension, arrhythmia, heart failure)
+    - Pulmonology (respiratory diseases, cough, asthma, COPD, shortness of breath)
+    - Gastroenterology (stomach, digestion, ulcers, acid reflux, IBS, diarrhea)
+    - Neurology (headache, migraine, seizure, stroke, Parkinson's, nerve pain)
+    - Orthopedics (bones, joints, back pain, fractures, arthritis, knee injury)
+    - General Medicine (fever, common cold, flu, general health checkup)
+    - Psychiatry (mental health, depression, anxiety, stress, PTSD)
+    - Pediatrics (children's health, developmental issues)
+    - Dermatology (skin conditions, rashes, acne, eczema)
+    - Oncology (cancer-related symptoms)
+    
+    Respond ONLY with valid JSON (no markdown, no extra text):
+    {{
+        "primary_specialization": "...",
+        "confidence": 0.0-1.0,
+        "urgency_level": "routine" or "moderate" or "urgent" or "emergency",
+        "secondary_specializations": ["...", "..."],
+        "recommended_tests": ["...", "..."]
+    }}
+    """
+    
+    try:
+        response = assistant.client.messages.create(
+            model="gemini-1.5-pro",
+            max_tokens=500,
+            messages=[{"role": "user", "content": prompt}]
+        )
+        
+        # Extract JSON from response
+        content = response.content[0].text.strip()
+        # Remove markdown code blocks if present
+        if content.startswith('```'):
+            content = content.split('```')[1]
+            if content.startswith('json'):
+                content = content[4:]
+            content = content.strip()
+        
+        result = json.loads(content)
+        return result
+    except Exception as e:
+        print(f"Error classifying symptoms: {e}")
+        return None
+
+
+def find_matching_doctors(condition, patient_lat, patient_lng):
+    """
+    Rank doctors by:
+    1. Specialization match (100 pts)
+    2. Distance proximity (50 pts - closer is better)
+    3. Experience level (30 pts)
+    4. Patient ratings (20 pts)
+    """
+    
+    db = get_db()
+    cur = db.cursor()
+    
+    primary_spec = condition.get('primary_specialization', 'General Medicine')
+    
+    # Get all doctors with hospitals that have location data (within 100km for rural areas)
+    cur.execute("""
+        SELECT 
+            u.id, u.full_name, u.username, dp.specialization, dp.experience_years,
+            h.latitude, h.longitude, h.name as hospital_name, h.id as hospital_id,
+            COALESCE(AVG(ds.patient_satisfaction_score), 3.5) as rating,
+            (6371 * acos(cos(radians(%s)) * cos(radians(COALESCE(h.latitude, %s))) * 
+             cos(radians(COALESCE(h.longitude, %s)) - radians(%s)) + 
+             sin(radians(%s)) * sin(radians(COALESCE(h.latitude, %s))))) AS distance_km
+        FROM users u
+        LEFT JOIN doctor_profiles dp ON u.id = dp.user_id
+        LEFT JOIN hospitals h ON dp.hospital_id = h.id
+        LEFT JOIN doctor_statistics ds ON u.id = ds.doctor_user_id
+        WHERE u.role = 'doctor' 
+        GROUP BY u.id, u.full_name, u.username, dp.specialization, dp.experience_years,
+                 h.latitude, h.longitude, h.name, h.id
+        HAVING distance_km IS NULL OR distance_km < 100
+        ORDER BY distance_km ASC LIMIT 20
+    """, (patient_lat, patient_lat, patient_lng, patient_lng, patient_lat, patient_lat))
+    
+    doctors = cur.fetchall()
+    
+    # Score each doctor
+    scored = []
+    for doc in doctors:
+        if doc['distance_km'] is None:
+            continue
+            
+        score = 0
+        
+        # 1. Specialization match (100 pts)
+        if doc['specialization'] and primary_spec.lower() in doc['specialization'].lower():
+            score += 100
+        elif doc['specialization']:
+            score += 30  # Partial credit for any doctor
+        else:
+            score += 20
+        
+        # 2. Distance bonus (50 pts - closer is better, scale logarithmically for rural areas)
+        distance = float(doc['distance_km']) if doc['distance_km'] else 100
+        if distance < 5:
+            score += 50
+        elif distance < 10:
+            score += 40
+        elif distance < 20:
+            score += 30
+        elif distance < 50:
+            score += 15
+        else:
+            score += 5
+        
+        # 3. Experience (30 pts - max 20 years for rural pracitioners)
+        exp = min(float(doc['experience_years']) if doc['experience_years'] else 0, 20)
+        score += (exp / 20) * 30
+        
+        # 4. Rating (20 pts - scale 3.0 to 5.0)
+        rating = float(doc['rating']) if doc['rating'] else 3.5
+        rating = min(max(rating, 3.0), 5.0)
+        score += ((rating - 3.0) / 2.0) * 20
+        
+        scored.append({
+            'id': doc['id'],
+            'name': doc['full_name'] or doc['username'],
+            'specialization': doc['specialization'] or 'General Medicine',
+            'experience_years': doc['experience_years'] or 0,
+            'hospital_name': doc['hospital_name'] or 'Unknown Hospital',
+            'hospital_id': doc['hospital_id'],
+            'distance_km': round(distance, 1),
+            'rating': round(rating, 1),
+            'match_score': round(score, 0)
+        })
+    
+    # Return top 5 ranked doctors sorted by match score
+    return sorted(scored, key=lambda x: x['match_score'], reverse=True)[:5]
+
+
+@app.route('/ai/recommend-doctor', methods=['POST'])
+def recommend_doctor():
+    """
+    AI-powered doctor recommendation based on symptoms and location.
+    
+    Input JSON:
+    {
+        "symptoms": "chest pain, shortness of breath",
+        "latitude": 1.2345,
+        "longitude": 39.6789
+    }
+    
+    Output: Recommended doctors ranked by specialization match, distance, and experience
+    """
+    current_user = get_current_user()
+    if not current_user:
+        return jsonify({'error': 'Unauthorized'}), 401
+
+    uid = current_user.get('id') or current_user.get('sub')
+    data = request.get_json() or {}
+    
+    symptoms = data.get('symptoms', '').strip()
+    latitude = data.get('latitude')
+    longitude = data.get('longitude')
+    
+    if not symptoms:
+        return jsonify({'error': 'symptoms required'}), 400
+    if latitude is None or longitude is None:
+        return jsonify({'error': 'latitude and longitude required'}), 400
+
+    # Store the location for future use
+    db = get_db()
+    cur = db.cursor()
+    try:
+        cur.execute(
+            """
+            UPDATE users 
+            SET latitude = %s, longitude = %s, location_updated_at = NOW()
+            WHERE id = %s
+            """,
+            (latitude, longitude, uid)
+        )
+        db.commit()
+    except:
+        pass  # Continue even if location update fails
+
+    # Classify symptoms using AI
+    condition = classify_symptoms_with_ai(symptoms)
+    
+    if not condition:
+        # Fallback: basic keyword matching for offline mode
+        lower_symptoms = symptoms.lower()
+        if 'chest' in lower_symptoms or 'heart' in lower_symptoms or 'pressure' in lower_symptoms:
+            condition = {
+                'primary_specialization': 'Cardiology',
+                'confidence': 0.7,
+                'urgency_level': 'moderate',
+                'secondary_specializations': [],
+                'recommended_tests': []
+            }
+        elif 'breath' in lower_symptoms or 'cough' in lower_symptoms:
+            condition = {
+                'primary_specialization': 'Pulmonology',
+                'confidence': 0.7,
+                'urgency_level': 'moderate',
+                'secondary_specializations': [],
+                'recommended_tests': []
+            }
+        else:
+            condition = {
+                'primary_specialization': 'General Medicine',
+                'confidence': 0.5,
+                'urgency_level': 'routine',
+                'secondary_specializations': [],
+                'recommended_tests': []
+            }
+    
+    # Find matching doctors
+    doctors = find_matching_doctors(condition, latitude, longitude)
+    
+    return jsonify({
+        'status': 'ok',
+        'condition': condition,
+        'recommended_doctors': doctors,
+        'message': f'Found {len(doctors)} doctors matching your symptoms'
+    })
+
+
 @app.route('/appointments', methods=['GET', 'POST'])
 def appointments():
     current_user = get_current_user()

@@ -721,6 +721,44 @@
 
         <div class="row" id="patientForm">
             <div class="col-lg-8 mx-auto">
+                <!-- AI Doctor Recommendation Section -->
+                <div class="card mb-4">
+                    <div class="card-header bg-info text-white">
+                        <i class="bi bi-brain me-2"></i>AI-Powered Doctor Matching
+                    </div>
+                    <div class="card-body">
+                        <p class="text-muted small mb-3">
+                            <i class="bi bi-info-circle"></i> Describe your symptoms and let our AI find the best doctor for you based on your location
+                        </p>
+                        <div class="mb-3">
+                            <label class="form-label">Describe Your Symptoms</label>
+                            <textarea id="symptomInput" 
+                                      class="form-control" 
+                                      rows="4"
+                                      placeholder="Example: I have severe chest pain when running, shortness of breath, and dizziness. Started 3 days ago."></textarea>
+                        </div>
+                        <div class="mb-3">
+                            <button id="getRecommendationBtn" class="btn btn-info w-100">
+                                <i class="bi bi-magic"></i> Find Best Doctor for Me
+                            </button>
+                            <small class="text-muted d-block mt-2">
+                                <i class="bi bi-geo-alt"></i> This will request access to your location
+                            </small>
+                        </div>
+                        
+                        <!-- Loading State -->
+                        <div id="recommendationLoading" class="text-center" style="display:none;">
+                            <div class="spinner-border spinner-border-sm text-info me-2" role="status">
+                                <span class="visually-hidden">Loading...</span>
+                            </div>
+                            <span class="text-muted">Finding doctors matching your symptoms...</span>
+                        </div>
+                        
+                        <!-- Recommendations Results -->
+                        <div id="doctorRecommendations" class="mt-4"></div>
+                    </div>
+                </div>
+
                 <div class="card">
                     <div class="card-header">
                         <i class="bi bi-calendar2-check me-2"></i>Book an Appointment
@@ -1621,6 +1659,157 @@
                     await loadAppointments();
                 }catch(e){ if (resultEl) resultEl.textContent = 'Network error'; }
             }
+
+            // AI Doctor Recommendation
+            const getRecommendationBtn = document.getElementById('getRecommendationBtn');
+            if (getRecommendationBtn) {
+                getRecommendationBtn.addEventListener('click', async () => {
+                    const token = getToken();
+                    if (!token) { alert('Please login first'); return; }
+                    
+                    const symptoms = document.getElementById('symptomInput')?.value || '';
+                    if (!symptoms.trim()) {
+                        alert('Please describe your symptoms');
+                        return;
+                    }
+                    
+                    const loadingDiv = document.getElementById('recommendationLoading');
+                    const resultsDiv = document.getElementById('doctorRecommendations');
+                    
+                    if (loadingDiv) loadingDiv.style.display = 'block';
+                    if (resultsDiv) resultsDiv.innerHTML = '';
+                    
+                    try {
+                        // Request geolocation
+                        const position = await new Promise((resolve, reject) => {
+                            navigator.geolocation.getCurrentPosition(resolve, reject, {
+                                timeout: 10000,
+                                enableHighAccuracy: false
+                            });
+                        });
+                        
+                        const latitude = position.coords.latitude;
+                        const longitude = position.coords.longitude;
+                        
+                        // Get AI recommendations
+                        const resp = await fetch('/ai/recommend-doctor', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'Authorization': 'Bearer ' + token
+                            },
+                            body: JSON.stringify({
+                                symptoms: symptoms,
+                                latitude: latitude,
+                                longitude: longitude
+                            })
+                        });
+                        
+                        if (loadingDiv) loadingDiv.style.display = 'none';
+                        
+                        const data = await resp.json();
+                        
+                        if (!resp.ok) {
+                            if (resultsDiv) resultsDiv.innerHTML = `<div class="alert alert-danger">${data.error || 'Failed to get recommendations'}</div>`;
+                            return;
+                        }
+                        
+                        // Display results
+                        let html = `
+                            <div class="alert alert-info">
+                                <i class="bi bi-info-circle me-2"></i>
+                                <strong>Condition Identified:</strong> 
+                                <span class="badge bg-primary">${data.condition.primary_specialization}</span>
+                                <small class="d-block mt-2">
+                                    Urgency Level: <span class="badge bg-${
+                                        data.condition.urgency_level === 'emergency' ? 'danger' :
+                                        data.condition.urgency_level === 'urgent' ? 'warning' :
+                                        data.condition.urgency_level === 'moderate' ? 'info' : 'success'
+                                    }">${data.condition.urgency_level.toUpperCase()}</span>
+                                </small>
+                            </div>
+                            <h6 class="mt-3">Recommended Doctors (Ranked by Match)</h6>
+                        `;
+                        
+                        if (data.recommended_doctors.length === 0) {
+                            html += '<p class="text-muted">No doctors found in your area. Try a different location.</p>';
+                        } else {
+                            html += '<div class="list-group">';
+                            data.recommended_doctors.forEach(doc => {
+                                const matchPercent = Math.min(100, Math.round(doc.match_score));
+                                html += `
+                                    <button type="button" class="list-group-item list-group-item-action" 
+                                            onclick="selectRecommendedDoctor(${doc.id}, '${doc.name.replace(/'/g, "\\'")}', ${doc.hospital_id})">
+                                        <div class="d-flex justify-content-between align-items-start w-100">
+                                            <div>
+                                                <h6 class="mb-1"><strong>${doc.name}</strong></h6>
+                                                <p class="mb-1 text-muted small">
+                                                    <i class="bi bi-hospital"></i> ${doc.hospital_name}
+                                                </p>
+                                                <p class="mb-0 small">
+                                                    <i class="bi bi-briefcase"></i> ${doc.specialization} • 
+                                                    <i class="bi bi-award"></i> ${doc.experience_years} years
+                                                </p>
+                                            </div>
+                                            <div class="text-end">
+                                                <span class="badge bg-success mb-2" style="font-size: 0.9rem;">${matchPercent}% Match</span>
+                                                <br>
+                                                <small class="text-muted d-block">
+                                                    <i class="bi bi-geo-alt"></i> ${doc.distance_km} km
+                                                </small>
+                                                <small class="text-warning d-block">
+                                                    <i class="bi bi-star-fill"></i> ${doc.rating}/5
+                                                </small>
+                                            </div>
+                                        </div>
+                                    </button>
+                                `;
+                            });
+                            html += '</div>';
+                        }
+                        
+                        if (resultsDiv) resultsDiv.innerHTML = html;
+                        
+                    } catch (error) {
+                        if (loadingDiv) loadingDiv.style.display = 'none';
+                        console.error('Error:', error);
+                        
+                        let errorMsg = 'Failed to get recommendations. ';
+                        if (error.code === 1) {
+                            errorMsg += 'Please enable location access in your browser settings.';
+                        } else if (error.code === 2) {
+                            errorMsg += 'Unable to retrieve your location. Please check your GPS or try again.';
+                        } else if (error.code === 3) {
+                            errorMsg += 'Location request timed out. Please try again.';
+                        } else {
+                            errorMsg += error.message || 'Please try again.';
+                        }
+                        
+                        if (resultsDiv) resultsDiv.innerHTML = `<div class="alert alert-warning">${errorMsg}</div>`;
+                    }
+                });
+            }
+            
+            // Helper function to select a recommended doctor
+            window.selectRecommendedDoctor = function(doctorId, doctorName, hospitalId) {
+                // Pre-fill the appointment form
+                const hospitalSelect = document.getElementById('appointmentHospital');
+                const doctorSelect = document.getElementById('appointmentDoctor');
+                const reasonInput = document.getElementById('appointmentReason');
+                
+                if (hospitalSelect && hospitalId) {
+                    hospitalSelect.value = hospitalId;
+                }
+                if (doctorSelect) {
+                    doctorSelect.value = doctorId;
+                }
+                if (reasonInput) {
+                    reasonInput.focus();
+                }
+                
+                // Scroll to appointment form
+                document.querySelector('[data-section="appointments"]')?.scrollIntoView({ behavior: 'smooth' });
+            };
             
             // Task selection - enable chat immediately when task is selected
             taskOptions.forEach(option => {

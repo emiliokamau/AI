@@ -181,7 +181,11 @@ def init_db():
             age VARCHAR(32),
             gender VARCHAR(32),
             contact VARCHAR(255),
-            medical_history TEXT
+            medical_history TEXT,
+            latitude DECIMAL(10, 8),
+            longitude DECIMAL(11, 8),
+            location_updated_at DATETIME,
+            location_permission_granted BOOLEAN DEFAULT FALSE
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
         """
     )
