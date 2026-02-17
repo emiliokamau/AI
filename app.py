@@ -637,7 +637,7 @@ def sanitize_ai_text(text: str) -> str:
 app = Flask(__name__)
 
 # CORS Configuration: restrict to specific domains in production
-cors_origins = os.environ.get("CORS_ORIGINS", "http://localhost:5000").split(",")
+cors_origins = os.environ.get("CORS_ORIGINS", "http://localhost:5000,https://mediai-lovat.vercel.app").split(",")
 cors_origins = [origin.strip() for origin in cors_origins]  # Remove whitespace
 
 CORS(

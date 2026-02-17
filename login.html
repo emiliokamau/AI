@@ -153,6 +153,9 @@
             }
         }
     </style>
+    <script>
+        window.BACKEND_URL = 'https://medic-ai-back-end.onrender.com';
+    </script>
 </head>
 <body>
 
@@ -242,10 +245,13 @@
             }
 
             try {
-                const resp = await fetch(endpoint, {
+                const backendUrl = window.BACKEND_URL || 'https://medic-ai-back-end.onrender.com';
+                const fullUrl = backendUrl + endpoint;
+                const resp = await fetch(fullUrl, {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify(payload)
+                    body: JSON.stringify(payload),
+                    credentials: 'include'
                 });
                 
                 const data = await resp.json();
@@ -266,10 +272,13 @@
                     // Register success -> then login automatically
                     alert('Account created! Logging you in...');
                     // call login
-                    const loginResp = await fetch('/users/login', {
+                    const backendUrl = window.BACKEND_URL || 'https://medic-ai-back-end.onrender.com';
+                    const loginUrl = backendUrl + '/users/login';
+                    const loginResp = await fetch(loginUrl, {
                         method: 'POST',
                         headers: {'Content-Type': 'application/json'},
-                        body: JSON.stringify({username, password})
+                        body: JSON.stringify({username, password}),
+                        credentials: 'include'
                     });
                     const loginData = await loginResp.json();
                     if (loginResp.ok) {

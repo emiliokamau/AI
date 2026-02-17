@@ -174,6 +174,9 @@
       color: #212529;
     }
   </style>
+  <script>
+    window.BACKEND_URL = 'https://medic-ai-back-end.onrender.com';
+  </script>
 </head>
 <body>
   <button class="btn btn-primary" style="position:fixed;top:20px;left:20px;z-index:999;" onclick="window.location.href='/dashboard.html'">Open Patient Dashboard</button>
@@ -325,10 +328,13 @@
     });
     
     async function apiPost(path, body) {
-      const res = await fetch(path, {
+      const backendUrl = window.BACKEND_URL || 'https://medic-ai-back-end.onrender.com';
+      const url = backendUrl + path;
+      const res = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body)
+        body: JSON.stringify(body),
+        credentials: 'include'
       });
       const j = await res.json().catch(() => ({ error: 'Invalid JSON response' }));
       return { status: res.status, body: j };
