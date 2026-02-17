@@ -695,6 +695,28 @@
             </div>
         </div>
         
+        <!-- Healthcare Services -->
+        <div class="sidebar-section" data-section="healthcare">
+            <div class="sidebar-section-header">
+                <div class="sidebar-section-title">Healthcare Services</div>
+                <i class="bi bi-chevron-down sidebar-section-toggle"></i>
+            </div>
+            <div class="sidebar-section-content">
+                <button class="sidebar-nav-item" id="aiDoctorMatchingBtn" data-tooltip="AI Doctor Matching">
+                    <i class="bi bi-brain"></i>
+                    <span>AI Doctor Matching</span>
+                </button>
+                <button class="sidebar-nav-item" id="videoConsultationBtn" data-tooltip="Video Consultation">
+                    <i class="bi bi-camera-video"></i>
+                    <span>Video Consultation</span>
+                </button>
+                <button class="sidebar-nav-item" id="appointmentBtn" data-tooltip="Book Appointment">
+                    <i class="bi bi-calendar2-check"></i>
+                    <span>Book Appointment</span>
+                </button>
+            </div>
+        </div>
+        
         <!-- Account Actions -->
         <div class="sidebar-actions">
             <button class="btn btn-sm btn-success w-50" id="loginBtn">Login</button>
@@ -719,83 +741,62 @@
             <strong>Emergency Notice:</strong> If you're experiencing a medical emergency, please call emergency services immediately or go to the nearest emergency room.
         </div>
 
-        <div class="row" id="patientForm">
-            <div class="col-lg-8 mx-auto">
-                <!-- AI Doctor Recommendation Section -->
-                <div class="card mb-4">
-                    <div class="card-header bg-info text-white">
-                        <i class="bi bi-brain me-2"></i>AI-Powered Doctor Matching
-                    </div>
-                    <div class="card-body">
-                        <p class="text-muted small mb-3">
-                            <i class="bi bi-info-circle"></i> Describe your symptoms and let our AI find the best doctor for you based on your location
-                        </p>
-                        <div class="mb-3">
-                            <label class="form-label">Describe Your Symptoms</label>
-                            <textarea id="symptomInput" 
-                                      class="form-control" 
-                                      rows="4"
-                                      placeholder="Example: I have severe chest pain when running, shortness of breath, and dizziness. Started 3 days ago."></textarea>
+        <!-- AI Doctor Matching Content Section -->
+        <div id="aiDoctorMatchingSection" style="display:none;">
+            <div class="row">
+                <div class="col-lg-8 mx-auto">
+                    <div class="card mb-4">
+                        <div class="card-header bg-info text-white">
+                            <i class="bi bi-brain me-2"></i>AI-Powered Doctor Matching
                         </div>
-                        <div class="mb-3">
-                            <button id="getRecommendationBtn" class="btn btn-info w-100">
-                                <i class="bi bi-magic"></i> Find Best Doctor for Me
-                            </button>
-                            <small class="text-muted d-block mt-2">
-                                <i class="bi bi-geo-alt"></i> This will request access to your location
-                            </small>
-                        </div>
-                        
-                        <!-- Loading State -->
-                        <div id="recommendationLoading" class="text-center" style="display:none;">
-                            <div class="spinner-border spinner-border-sm text-info me-2" role="status">
-                                <span class="visually-hidden">Loading...</span>
+                        <div class="card-body">
+                            <p class="text-muted small mb-3">
+                                <i class="bi bi-info-circle"></i> Describe your symptoms and let our AI find the best doctor for you based on your location
+                            </p>
+                            <div class="mb-3">
+                                <label class="form-label">Describe Your Symptoms</label>
+                                <textarea id="symptomInput" 
+                                          class="form-control" 
+                                          rows="4"
+                                          placeholder="Example: I have severe chest pain when running, shortness of breath, and dizziness. Started 3 days ago."></textarea>
                             </div>
-                            <span class="text-muted">Finding doctors matching your symptoms...</span>
+                            <div class="mb-3">
+                                <button id="getRecommendationBtn" class="btn btn-info w-100">
+                                    <i class="bi bi-magic"></i> Find Best Doctor for Me
+                                </button>
+                                <small class="text-muted d-block mt-2">
+                                    <i class="bi bi-geo-alt"></i> This will request access to your location
+                                </small>
+                            </div>
+                            
+                            <!-- Loading State -->
+                            <div id="recommendationLoading" class="text-center" style="display:none;">
+                                <div class="spinner-border spinner-border-sm text-info me-2" role="status">
+                                    <span class="visually-hidden">Loading...</span>
+                                </div>
+                                <span class="text-muted">Finding doctors matching your symptoms...</span>
+                            </div>
+                            
+                            <!-- Recommendations Results -->
+                            <div id="doctorRecommendations" class="mt-4"></div>
                         </div>
-                        
-                        <!-- Recommendations Results -->
-                        <div id="doctorRecommendations" class="mt-4"></div>
                     </div>
                 </div>
+            </div>
+        </div>
 
-                <div class="card">
-                    <div class="card-header">
-                        <i class="bi bi-calendar2-check me-2"></i>Book an Appointment
-                    </div>
-                    <div class="card-body">
-                        <div class="row g-2">
-                            <div class="col-md-6">
-                                <label class="form-label">Hospital</label>
-                                <select id="appointmentHospital" class="form-select"></select>
-                            </div>
-                            <div class="col-md-6">
-                                <label class="form-label">Doctor (optional)</label>
-                                <select id="appointmentDoctor" class="form-select"></select>
-                            </div>
+        <!-- Video Consultation Content Section -->
+        <div id="videoConsultationSection" style="display:none;">
+            <div class="row">
+                <div class="col-lg-8 mx-auto">
+                    <div class="card">
+                        <div class="card-header">
+                            <i class="bi bi-camera-video me-2"></i>Schedule a Video Consultation
                         </div>
-                        <div class="row g-2 mt-2">
-                            <div class="col-md-6">
-                                <label class="form-label">Preferred Date/Time</label>
-                                <input id="appointmentTime" type="datetime-local" class="form-control" />
-                            </div>
-                            <div class="col-md-6">
-                                <label class="form-label">Reason</label>
-                                <input id="appointmentReason" class="form-control" placeholder="Reason for visit" />
-                            </div>
-                        </div>
-                        <div class="mt-3 d-flex gap-2">
-                            <button id="bookAppointmentBtn" class="btn btn-primary">Book Appointment</button>
-                            <button id="refreshAppointmentsBtn" class="btn btn-outline-secondary">Refresh</button>
-                        </div>
-                        <div id="appointmentResult" class="mt-2"></div>
-                        
-                        <!-- Video Consultation Option -->
-                        <div class="mt-4 border-top pt-3">
-                            <h6>
-                                <i class="bi bi-camera-video me-2"></i>Or Schedule a Video Consultation
-                            </h6>
-                            <p class="text-muted small">Get immediate help through Google Meet video call without traveling</p>
+                        <div class="card-body">
+                            <p class="text-muted small mb-3">
+                                <i class="bi bi-info-circle"></i> Get immediate help through Google Meet video call without traveling
+                            </p>
                             
                             <div class="row g-2">
                                 <div class="col-md-6">
@@ -855,12 +856,56 @@
                                 <small class="text-muted">You'll receive a notification before the call starts.</small>
                             </div>
                         </div>
-                        <div id="appointmentList" class="mt-3">
-                            <p class="text-muted">No appointments loaded.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Book Appointment Content Section -->
+        <div id="appointmentSection" style="display:none;">
+            <div class="row">
+                <div class="col-lg-8 mx-auto">
+                    <div class="card">
+                        <div class="card-header">
+                            <i class="bi bi-calendar2-check me-2"></i>Book an Appointment
+                        </div>
+                        <div class="card-body">
+                            <div class="row g-2">
+                                <div class="col-md-6">
+                                    <label class="form-label">Hospital</label>
+                                    <select id="appointmentHospital" class="form-select"></select>
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label">Doctor (optional)</label>
+                                    <select id="appointmentDoctor" class="form-select"></select>
+                                </div>
+                            </div>
+                            <div class="row g-2 mt-2">
+                                <div class="col-md-6">
+                                    <label class="form-label">Preferred Date/Time</label>
+                                    <input id="appointmentTime" type="datetime-local" class="form-control" />
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label">Reason</label>
+                                    <input id="appointmentReason" class="form-control" placeholder="Reason for visit" />
+                                </div>
+                            </div>
+                            <div class="mt-3 d-flex gap-2">
+                                <button id="bookAppointmentBtn" class="btn btn-primary">Book Appointment</button>
+                                <button id="refreshAppointmentsBtn" class="btn btn-outline-secondary">Refresh</button>
+                            </div>
+                            <div id="appointmentResult" class="mt-2"></div>
+                            <div id="appointmentList" class="mt-3">
+                                <p class="text-muted">No appointments loaded.</p>
+                            </div>
                         </div>
                     </div>
                 </div>
+            </div>
+        </div>
 
+        <div class="row" id="patientForm">
+            <div class="col-lg-8 mx-auto">
                 <div class="card">
                     <div class="card-header">
                         <i class="bi bi-clipboard-check me-2"></i>Help Category
@@ -1566,7 +1611,8 @@
             function hideAllSections() {
                 const sections = ['patientForm', 'chatContainer', 'healthDashboard', 'logMetricSection', 
                                  'riskAssessmentSection', 'messagesSection', 'notificationsSection', 'forumSection',
-                                 'medicationsSection', 'adherenceSection', 'documentsSection', 'nearbyHospitalsSection'];
+                                 'medicationsSection', 'adherenceSection', 'documentsSection', 'nearbyHospitalsSection',
+                                 'aiDoctorMatchingSection', 'videoConsultationSection', 'appointmentSection'];
                 sections.forEach(id => {
                     const el = document.getElementById(id);
                     if (el) el.style.display = 'none';
@@ -1666,14 +1712,22 @@
                     const resp = await fetch('/doctors');
                     const j = await resp.json();
                     const sel = document.getElementById('appointmentDoctor');
-                    if (!sel) return;
-                    sel.innerHTML = '<option value="">-- Any Doctor --</option>';
+                    const videoSel = document.getElementById('videoConsultationDoctor');
+                    
+                    const doctorOptions = '<option value="">-- Any Doctor --</option>';
+                    const videoDoctorOptions = '<option value="">-- Select a Doctor --</option>';
+                    
+                    let options = doctorOptions;
+                    let videoOptions = videoDoctorOptions;
+                    
                     (j.doctors || []).forEach(d => {
-                        const opt = document.createElement('option');
-                        opt.value = d.id;
-                        opt.textContent = `${d.full_name || d.username} ${d.specialization ? '(' + d.specialization + ')' : ''}`;
-                        sel.appendChild(opt);
+                        const optText = `${d.full_name || d.username} ${d.specialization ? '(' + d.specialization + ')' : ''}`;
+                        options += `<option value="${d.id}">${optText}</option>`;
+                        videoOptions += `<option value="${d.id}">${optText}</option>`;
                     });
+                    
+                    if (sel) sel.innerHTML = options;
+                    if (videoSel) videoSel.innerHTML = videoOptions;
                 }catch(e){ /* ignore */ }
             }
 
@@ -2536,7 +2590,8 @@
             function hideAllSections() {
                 const sections = ['healthDashboard', 'logMetricSection', 'riskAssessmentSection', 
                                   'forumSection', 'notificationsSection', 'messagesSection',
-                                  'medicationsSection', 'adherenceSection', 'documentsSection', 'nearbyHospitalsSection'];
+                                  'medicationsSection', 'adherenceSection', 'documentsSection', 'nearbyHospitalsSection',
+                                  'aiDoctorMatchingSection', 'videoConsultationSection', 'appointmentSection'];
                 sections.forEach(id => {
                     const el = document.getElementById(id);
                     if (el) el.style.display = 'none';
@@ -2668,6 +2723,32 @@
                 chatContainer.style.display = 'none';
                 patientForm.style.display = 'block';
             });
+
+            // Healthcare Services section handlers
+            const aiDoctorMatchingBtn = document.getElementById('aiDoctorMatchingBtn');
+            const videoConsultationBtn = document.getElementById('videoConsultationBtn');
+            const appointmentBtn = document.getElementById('appointmentBtn');
+            
+            if (aiDoctorMatchingBtn) {
+                aiDoctorMatchingBtn.addEventListener('click', function(e){
+                    e.preventDefault();
+                    showSection('aiDoctorMatchingSection', 'aiDoctorMatchingBtn');
+                });
+            }
+            
+            if (videoConsultationBtn) {
+                videoConsultationBtn.addEventListener('click', function(e){
+                    e.preventDefault();
+                    showSection('videoConsultationSection', 'videoConsultationBtn');
+                });
+            }
+            
+            if (appointmentBtn) {
+                appointmentBtn.addEventListener('click', function(e){
+                    e.preventDefault();
+                    showSection('appointmentSection', 'appointmentBtn');
+                });
+            }
 
             // Request an emergency chat - notify clinicians and show calming guidance
             window.requestEmergencyChat = async function() {
