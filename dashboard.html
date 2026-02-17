@@ -1646,9 +1646,26 @@
                     const resp = await fetch('/profile', { headers: { 'Authorization': 'Bearer ' + token } });
                     if (!resp.ok) return;
                     const j = await resp.json();
-                    const name = j.full_name || j.username || 'Patient';
+                    
+                    // Build welcome message based on user role
+                    let welcomeText = j.username || 'User';  // Default to username
+                    
+                    if (j.role === 'doctor') {
+                        // For doctors: show full name + specialization
+                        if (j.full_name) {
+                            welcomeText = j.full_name;
+                            if (j.specialization) {
+                                welcomeText += ` (${j.specialization})`;
+                            }
+                        }
+                    } else {
+                        // For patients: show username
+                        welcomeText = j.username || 'Patient';
+                    }
+                    
                     const welcomeEl = document.getElementById('patientWelcomeName');
-                    if (welcomeEl) welcomeEl.textContent = name;
+                    if (welcomeEl) welcomeEl.textContent = welcomeText;
+                    
                     // populate form fields
                     const fullNameEl = document.getElementById('fullName');
                     const ageEl = document.getElementById('age');

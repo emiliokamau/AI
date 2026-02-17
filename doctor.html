@@ -713,8 +713,14 @@
                 const resp = await fetch('/profile', { headers: { 'Authorization': 'Bearer ' + token } });
                 if (!resp.ok) return;
                 const j = await resp.json();
-                const name = j.full_name || j.username || 'Doctor';
-                document.getElementById('doctorWelcomeName').textContent = name;
+                
+                // Build welcome message with name + specialization
+                let welcomeText = j.full_name || j.username || 'Doctor';
+                if (j.specialization) {
+                    welcomeText += ` (${j.specialization})`;
+                }
+                
+                document.getElementById('doctorWelcomeName').textContent = welcomeText;
             } catch (e) { /* ignore */ }
         }
 

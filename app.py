@@ -1708,6 +1708,7 @@ def profile():
         if not user_id:
              return jsonify({'error': 'Unauthorized - No User ID'}), 401
 
+        # Get user profile
         cur.execute('SELECT id, username, role, full_name, age, gender, contact, medical_history, created_at FROM users WHERE id = %s', (user_id,))
         row = cur.fetchone()
         
@@ -1715,6 +1716,14 @@ def profile():
             return jsonify({'error': 'Profile not found'}), 404
             
         profile_data = dict(row)
+        
+        # If user is a doctor, get their specialization
+        if profile_data.get('role') == 'doctor':
+            cur.execute('SELECT specialization FROM doctor_profiles WHERE user_id = %s', (user_id,))
+            doc_row = cur.fetchone()
+            if doc_row:
+                profile_data['specialization'] = doc_row.get('specialization')
+        
         # Decrypt medical history before sending to patient/doctor
         if profile_data.get('medical_history'):
             profile_data['medical_history'] = decrypt_medical_history(profile_data['medical_history'])
