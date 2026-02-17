@@ -25,6 +25,8 @@ from passlib.hash import pbkdf2_sha256 as pwd_hasher
 from werkzeug.utils import secure_filename
 from flask import Flask, request, jsonify, g, send_from_directory, Response
 from flask_cors import CORS
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 from cryptography.fernet import Fernet
 
 try:
@@ -75,6 +77,101 @@ def decrypt_medical_history(ciphertext: str) -> str:
     except Exception as e:
         print(f"Decryption error: {e}")
         return "[Encrypted data - unable to decrypt]"
+
+
+# ==================== INPUT VALIDATION FUNCTIONS ====================
+
+def validate_location(latitude, longitude):
+    """Validate geographic coordinates (prevent injection attacks)."""
+    try:
+        lat = float(latitude)
+        lng = float(longitude)
+        
+        # Valid latitude range: -90 to 90
+        if not (-90 <= lat <= 90):
+            return False, "Invalid latitude: must be between -90 and 90"
+        
+        # Valid longitude range: -180 to 180
+        if not (-180 <= lng <= 180):
+            return False, "Invalid longitude: must be between -180 and 180"
+        
+        return True, None
+    except (ValueError, TypeError):
+        return False, "Latitude and longitude must be valid numbers"
+
+
+def validate_email(email):
+    """Validate email format to prevent injection."""
+    email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+    if not email or not re.match(email_pattern, str(email)):
+        return False
+    return True
+
+
+def validate_username(username):
+    """Validate username format (alphanumeric, underscore, dash only)."""
+    username_pattern = r'^[a-zA-Z0-9_-]{3,50}$'
+    if not username or not re.match(username_pattern, str(username)):
+        return False
+    return True
+
+
+def sanitize_input(user_input, max_length=1000):
+    """Basic XSS protection - remove dangerous characters."""
+    if not user_input:
+        return ""
+    
+    # Remove potential XSS vectors
+    dangerous_chars = ['<', '>', '"', "'", '&', ';']
+    sanitized = str(user_input)
+    for char in dangerous_chars:
+        sanitized = sanitized.replace(char, '')
+    
+    # Limit length to prevent buffer overflow
+    return sanitized[:max_length]
+
+
+# ==================== AUDIT LOGGING FUNCTIONS ====================
+
+def log_audit(user_id, action, resource_type, resource_id=None, details=None):
+    """Log security-relevant actions for HIPAA compliance."""
+    try:
+        db = get_db()
+        cur = db.cursor()
+        
+        # Create audit_logs table if it doesn't exist
+        cur.execute('''
+            CREATE TABLE IF NOT EXISTS audit_logs (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                user_id INT,
+                action VARCHAR(100),
+                resource_type VARCHAR(100),
+                resource_id INT,
+                details JSON,
+                timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                ip_address VARCHAR(45),
+                user_agent VARCHAR(500),
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL,
+                INDEX idx_user_timestamp (user_id, timestamp),
+                INDEX idx_resource (resource_type, resource_id)
+            )
+        ''')
+        
+        # Get request context
+        ip_address = request.remote_addr
+        user_agent = request.headers.get('User-Agent', '')[:500]
+        
+        # Insert audit log
+        cur.execute('''
+            INSERT INTO audit_logs 
+            (user_id, action, resource_type, resource_id, details, ip_address, user_agent)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+        ''', (user_id, action, resource_type, resource_id, 
+              json.dumps(details or {}), ip_address, user_agent))
+        
+        db.commit()
+    except Exception as e:
+        print(f"Audit logging error: {e}")
 
 
 class PatientAIAssistant:
@@ -636,6 +733,14 @@ def sanitize_ai_text(text: str) -> str:
 
 app = Flask(__name__)
 
+# Initialize Rate Limiter for API security
+limiter = Limiter(
+    app=app,
+    key_func=get_remote_address,
+    default_limits=["200 per day", "50 per hour"],
+    storage_uri="memory://"  # Use memory storage; in production use Redis
+)
+
 # CORS Configuration: restrict to specific domains in production
 cors_origins = os.environ.get("CORS_ORIGINS", "http://localhost:5000,https://mediai-lovat.vercel.app").split(",")
 cors_origins = [origin.strip() for origin in cors_origins]  # Remove whitespace
@@ -656,6 +761,24 @@ app.config['SESSION_COOKIE_HTTPONLY'] = True
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(hours=24)
 app.config['SESSION_REFRESH_EACH_REQUEST'] = True
+
+# Initialize Twilio for SMS/WhatsApp
+try:
+    from twilio.rest import Client
+    TWILIO_ACCOUNT_SID = os.environ.get("TWILIO_ACCOUNT_SID")
+    TWILIO_AUTH_TOKEN = os.environ.get("TWILIO_AUTH_TOKEN")
+    TWILIO_PHONE_NUMBER = os.environ.get("TWILIO_PHONE_NUMBER", "+1234567890")
+    TWILIO_WHATSAPP_NUMBER = os.environ.get("TWILIO_WHATSAPP_NUMBER", "whatsapp:+1234567890")
+    
+    if TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN:
+        twilio_client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
+        HAS_TWILIO = True
+    else:
+        twilio_client = None
+        HAS_TWILIO = False
+except ImportError:
+    twilio_client = None
+    HAS_TWILIO = False
 
 assistant = PatientAIAssistant()
 init_db()
@@ -717,7 +840,7 @@ def check_api_key(req):
     return True, "ok"
 
 
-def generate_jwt(user_id: int, role: str, expires_minutes: int = 1440) -> str:
+def generate_jwt(user_id: int, role: str, expires_minutes: int = 30) -> str:
     payload = {
         "sub": user_id,
         "role": role,
@@ -771,7 +894,7 @@ def get_current_user():
             cur.execute("INSERT INTO users (username, password_hash, role, created_at) VALUES (%s, %s, %s, %s)",
                         ('demo_user', 'demo', 'dev', datetime.utcnow()))
             db.commit()
-            return {"username": "demo_user", "role": "dev", "id": cur.lastrowid}
+            return {"username": "db.sql", "role": "dev", "id": cur.lastrowid}
         except Exception:
             # Fallback for race conditions or locking
             return {"username": "demo_super", "role": "dev", "id": 8888}
@@ -1339,12 +1462,26 @@ def register_user():
     password = data.get('password')
     role = data.get('role')  # 'patient' or 'doctor'
     profession = data.get('profession')
+    email = data.get('email', '')
+    
     if not username or not password or role not in ('patient', 'doctor'):
         return jsonify({'error': 'username, password and valid role required'}), 400
 
-    # simple guard against overly long passwords in this prototype
+    # Validate username format
+    if not validate_username(username):
+        return jsonify({'error': 'Username must be 3-50 characters, alphanumeric (underscore/dash allowed)'}), 400
+    
+    # Validate email if provided
+    if email and not validate_email(email):
+        return jsonify({'error': 'Invalid email format'}), 400
+
+    # Simple guard against overly long passwords in this prototype
     if len(password.encode('utf-8')) > 4096:
         return jsonify({'error': 'password too long'}), 400
+    
+    # Require minimum password strength
+    if len(password) < 8:
+        return jsonify({'error': 'Password must be at least 8 characters'}), 400
 
     pw_hash = pwd_hasher.hash(password)
     db = get_db()
@@ -1353,12 +1490,18 @@ def register_user():
         cur.execute("INSERT INTO users (username, password_hash, role, profession, created_at) VALUES (%s, %s, %s, %s, %s)",
                 (username, pw_hash, role, profession, datetime.utcnow()))
         db.commit()
+        
+        # Log audit for user registration
+        user_id = cur.lastrowid
+        log_audit(user_id, 'user_registered', 'users', user_id, {'role': role})
+        
         return jsonify({'status': 'ok'})
     except IntegrityError:
         return jsonify({'error': 'username already exists'}), 400
 
 
 @app.route('/users/login', methods=['POST'])
+@limiter.limit("5 per minute")  # Strict rate limit for login attempts
 def login_user():
     data = request.get_json() or {}
     username = data.get('username')
@@ -1874,6 +2017,11 @@ def update_patient_location():
     if latitude is None or longitude is None:
         return jsonify({'error': 'latitude and longitude required'}), 400
 
+    # Validate location coordinates (prevent injection)
+    is_valid, error_msg = validate_location(latitude, longitude)
+    if not is_valid:
+        return jsonify({'error': error_msg}), 400
+
     db = get_db()
     cur = db.cursor()
     
@@ -1888,6 +2036,11 @@ def update_patient_location():
             (latitude, longitude, permission_granted, uid)
         )
         db.commit()
+        
+        # Log audit for location access
+        log_audit(uid, 'location_updated', 'users', uid, 
+                 {'latitude': latitude, 'longitude': longitude})
+        
         return jsonify({'status': 'ok', 'message': 'Location updated successfully'})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -2037,6 +2190,7 @@ def find_matching_doctors(condition, patient_lat, patient_lng):
 
 
 @app.route('/ai/recommend-doctor', methods=['POST'])
+@limiter.limit("10 per hour")  # Rate limit AI API calls
 def recommend_doctor():
     """
     AI-powered doctor recommendation based on symptoms and location.
@@ -2269,6 +2423,7 @@ def get_doctor_available_slots(doctor_id):
 
 
 @app.route('/schedule-video-consultation', methods=['POST'])
+@limiter.limit("20 per hour")  # Rate limit video consultation bookings
 def schedule_video_consultation():
     """Schedule a video consultation (telemedicine appointment) with a doctor."""
     current_user = get_current_user()
@@ -2294,8 +2449,22 @@ def schedule_video_consultation():
         start_dt = datetime.fromisoformat(start_time)
         end_dt = start_dt + timedelta(minutes=duration_minutes)
         
-        # Generate Google Meet link
-        meet_link = generate_google_meet_link()
+        # Validate time is in the future
+        if start_dt <= datetime.utcnow():
+            return jsonify({'error': 'Appointment must be in the future'}), 400
+        
+        # Generate Google Meet link with retry logic
+        meet_link = None
+        for attempt in range(3):  # Try up to 3 times
+            try:
+                meet_link = generate_google_meet_link()
+                if meet_link:
+                    break
+            except Exception as e:
+                print(f"Google Meet link generation attempt {attempt + 1} failed: {e}")
+                if attempt == 2:  # Last attempt
+                    return jsonify({'error': 'Failed to generate video conference link. Please try again.'}), 500
+                time.sleep(1)  # Wait before retry
         
         # Create video consultation record
         cur.execute(
@@ -2310,6 +2479,10 @@ def schedule_video_consultation():
         )
         
         db.commit()
+        
+        # Log audit for video consultation
+        log_audit(uid, 'video_consultation_scheduled', 'video_consultations', 
+                 doctor_id, {'reason': reason, 'duration': duration_minutes})
         
         # Get doctor info for response
         cur.execute("SELECT full_name FROM users WHERE id = %s", (doctor_id,))
@@ -2398,6 +2571,680 @@ def doctor_video_consultations():
     return jsonify({
         'consultations': [dict(vc) for vc in consultations] if consultations else []
     })
+
+
+# ==================== EMERGENCY TRIAGE & SMS/WHATSAPP ====================
+
+@app.route('/emergency/triage', methods=['POST'])
+@limiter.limit("10 per hour")  # Rate limit emergency calls
+def emergency_triage():
+    """Emergency triage system to quickly assess severity and alert doctors."""
+    current_user = get_current_user()
+    if not current_user:
+        return jsonify({'error': 'Unauthorized'}), 401
+    
+    uid = current_user.get('id') or current_user.get('sub')
+    data = request.get_json() or {}
+    
+    # Triage levels: 1=not urgent, 2=minor, 3=moderate, 4=serious, 5=critical/life-threatening
+    symptoms = data.get('symptoms', '')
+    severity_level = data.get('severity_level', 3)  # Default to moderate
+    location_lat = data.get('latitude')
+    location_lng = data.get('longitude')
+    contact_phone = data.get('phone', '')
+    
+    try:
+        severity_level = int(severity_level)
+        if not (1 <= severity_level <= 5):
+            return jsonify({'error': 'Severity level must be 1-5'}), 400
+    except (ValueError, TypeError):
+        return jsonify({'error': 'Invalid severity_level'}), 400
+    
+    db = get_db()
+    cur = db.cursor()
+    
+    # Store emergency triage record
+    cur.execute('''
+        CREATE TABLE IF NOT EXISTS emergency_triages (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            patient_user_id INT,
+            severity_level INT,
+            symptoms TEXT,
+            latitude DECIMAL(10, 8),
+            longitude DECIMAL(11, 8),
+            contact_phone VARCHAR(20),
+            status VARCHAR(20) DEFAULT 'pending',
+            assigned_doctor_id INT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            resolved_at TIMESTAMP NULL,
+            FOREIGN KEY (patient_user_id) REFERENCES users(id),
+            FOREIGN KEY (assigned_doctor_id) REFERENCES users(id),
+            INDEX idx_severity (severity_level, created_at),
+            INDEX idx_patient (patient_user_id)
+        )
+    ''')
+    
+    try:
+        cur.execute('''
+            INSERT INTO emergency_triages 
+            (patient_user_id, severity_level, symptoms, latitude, longitude, contact_phone)
+            VALUES (%s, %s, %s, %s, %s, %s)
+        ''', (uid, severity_level, symptoms, location_lat, location_lng, contact_phone))
+        
+        triage_id = cur.lastrowid
+        db.commit()
+        
+        # Get patient info
+        cur.execute('SELECT full_name, latitude, longitude FROM users WHERE id = %s', (uid,))
+        patient = cur.fetchone()
+        patient_name = patient['full_name'] if patient else 'Patient'
+        
+        # Alert nearby doctors (within 50km) if severity level >= 4
+        alert_message = ""
+        if severity_level >= 4:
+            # Find doctors within 50km
+            if location_lat and location_lng:
+                cur.execute('''
+                    SELECT id, full_name, specialization, phone_number
+                    FROM users u
+                    LEFT JOIN doctor_profiles dp ON u.id = dp.user_id
+                    WHERE u.role = 'doctor'
+                    AND u.latitude IS NOT NULL
+                    AND (
+                        6371 * acos(
+                            cos(radians(%s)) * cos(radians(latitude)) *
+                            cos(radians(longitude) - radians(%s)) +
+                            sin(radians(%s)) * sin(radians(latitude))
+                        )
+                    ) <= 50
+                    ORDER BY specialization
+                    LIMIT 5
+                ''', (location_lat, location_lng, location_lat))
+                
+                nearby_doctors = cur.fetchall()
+                
+                if nearby_doctors:
+                    # Send SMS/WhatsApp to nearby doctors
+                    for doctor in nearby_doctors:
+                        doctor_phone = doctor['phone_number'] or contact_phone
+                        if doctor_phone and HAS_TWILIO:
+                            try:
+                                message_body = f"🚨 EMERGENCY ALERT: Severity Level {severity_level}/5\nPatient: {patient_name}\nSymptoms: {symptoms[:100]}\nTriage ID: {triage_id}"
+                                twilio_client.messages.create(
+                                    body=message_body,
+                                    from_=TWILIO_PHONE_NUMBER,
+                                    to=doctor_phone
+                                )
+                                alert_message += f"Alert sent to {doctor['full_name']}. "
+                            except Exception as e:
+                                print(f"SMS send error: {e}")
+        
+        # Log audit
+        log_audit(uid, 'emergency_triage_submitted', 'emergency_triages', triage_id, 
+                 {'severity': severity_level, 'symptoms': symptoms[:200]})
+        
+        return jsonify({
+            'status': 'ok',
+            'triage_id': triage_id,
+            'severity_level': severity_level,
+            'alert_message': alert_message or f"Emergency triage level {severity_level} recorded. Doctors will be notified.",
+            'expected_response_time': {
+                1: '24-48 hours',
+                2: '4-8 hours',
+                3: '1-2 hours',
+                4: '15-30 minutes',
+                5: 'IMMEDIATE - Call 911'
+            }.get(severity_level, '2-4 hours')
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/emergency/send-sms', methods=['POST'])
+@limiter.limit("5 per hour")
+def send_emergency_sms():
+    """Send emergency SMS to doctor or hospital."""
+    current_user = get_current_user()
+    if not current_user:
+        return jsonify({'error': 'Unauthorized'}), 401
+    
+    uid = current_user.get('id') or current_user.get('sub')
+    data = request.get_json() or {}
+    
+    recipient_phone = data.get('phone')
+    message_text = data.get('message')
+    recipient_type = data.get('recipient_type', 'doctor')  # 'doctor', 'hospital', 'emergency'
+    
+    if not recipient_phone or not message_text:
+        return jsonify({'error': 'phone and message required'}), 400
+    
+    if not HAS_TWILIO:
+        return jsonify({'error': 'SMS service not configured'}), 503
+    
+    try:
+        twilio_client.messages.create(
+            body=message_text[:160],  # SMS limit
+            from_=TWILIO_PHONE_NUMBER,
+            to=recipient_phone
+        )
+        
+        # Log audit
+        log_audit(uid, f'sms_sent_to_{recipient_type}', 'sms_log', None,
+                 {'recipient': recipient_phone, 'type': recipient_type})
+        
+        return jsonify({
+            'status': 'ok',
+            'message': f'Emergency SMS sent to {recipient_type}'
+        })
+    except Exception as e:
+        return jsonify({'error': f'SMS send failed: {str(e)}'}), 500
+
+
+# ==================== MEDICATION INTERACTION CHECKER ====================
+
+def get_drug_interaction_database():
+    """Get comprehensive drug interaction database."""
+    return {
+        'warfarin': {
+            'dangerous': ['aspirin', 'ibuprofen', 'naproxen', 'vitamin k', 'phenytoin', 'barbiturates'],
+            'level': 'CRITICAL',
+            'alternatives': ['dabigatran', 'rivaroxaban', 'apixaban'],
+            'note': 'Bleeding risk significantly increased'
+        },
+        'metformin': {
+            'dangerous': ['contrast media (iodine)', 'excessive alcohol', 'cimetidine'],
+            'level': 'HIGH',
+            'alternatives': ['pioglitazone', 'sitagliptin'],
+            'note': 'Risk of lactic acidosis'
+        },
+        'lisinopril': {
+            'dangerous': ['potassium supplements', 'NSAIDs', 'ACE inhibitors'],
+            'level': 'MODERATE',
+            'alternatives': ['losartan', 'amlodipine'],
+            'note': 'Hyperkalemia risk'
+        },
+        'metoprolol': {
+            'dangerous': ['verapamil', 'diltiazem', 'clonidine'],
+            'level': 'HIGH',
+            'alternatives': ['atenolol', 'carvedilol'],
+            'note': 'Heart block, severe bradycardia'
+        },
+        'simvastatin': {
+            'dangerous': ['amiodarone', 'erythromycin', 'ketoconazole', 'grapefruit juice'],
+            'level': 'MODERATE',
+            'alternatives': ['rosuvastatin', 'pravastatin'],
+            'note': 'Muscle toxicity increased'
+        },
+        'levothyroxine': {
+            'dangerous': ['iron supplements', 'calcium', 'antacids', 'PPIs'],
+            'level': 'MODERATE',
+            'alternatives': ['liothyronine'],
+            'note': 'Absorption reduced, may need dosage adjustment'
+        },
+        'amoxicillin': {
+            'dangerous': ['methotrexate', 'warfarin', 'birth control'],
+            'level': 'LOW',
+            'alternatives': ['azithromycin', 'cephalexin'],
+            'note': 'May reduce birth control effectiveness'
+        },
+        'sertraline': {
+            'dangerous': ['MAOIs', 'tramadol', 'linezolid', 'other SSRIs'],
+            'level': 'CRITICAL',
+            'alternatives': ['citalopram', 'escitalopram'],
+            'note': 'Serotonin syndrome risk'
+        }
+    }
+
+
+def get_common_allergies():
+    """Get list of common medication allergies to check against."""
+    return {
+        'penicillin': ['amoxicillin', 'ampicillin', 'piperacillin', 'amoxicillin-clavulanate'],
+        'sulfonamides': ['sulfamethoxazole', 'sulfadiazine', 'sulfasalazine'],
+        'nsaids': ['ibuprofen', 'naproxen', 'indomethacin', 'ketoprofen'],
+        'statins': ['atorvastatin', 'simvastatin', 'pravastatin', 'rosuvastatin'],
+        'acei': ['lisinopril', 'enalapril', 'ramipril', 'perindopril'],
+        'macrolides': ['erythromycin', 'azithromycin', 'clarithromycin'],
+    }
+
+
+@app.route('/check-drug-interactions', methods=['POST'])
+@limiter.limit("20 per hour")  # Rate limit drug checks
+def check_drug_interactions():
+    """Check for drug interactions and patient allergies."""
+    current_user = get_current_user()
+    if not current_user:
+        return jsonify({'error': 'Unauthorized'}), 401
+    
+    uid = current_user.get('id') or current_user.get('sub')
+    data = request.get_json() or {}
+    
+    # List of medications to check (case-insensitive)
+    medications = [m.lower() for m in data.get('medications', [])]
+    # List of known allergies (case-insensitive)
+    patient_allergies = [a.lower() for a in data.get('allergies', [])]
+    
+    if not medications:
+        return jsonify({'error': 'medications list required'}), 400
+    
+    db = get_db()
+    cur = db.cursor()
+    
+    # Get drug interaction database
+    drug_db = get_drug_interaction_database()
+    allergy_db = get_common_allergies()
+    
+    interactions = []
+    allergy_warnings = []
+    recommendations = []
+    
+    # Check for interactions between provided medications
+    med_list = [m.strip() for m in medications if m.strip()]
+    for i, med1 in enumerate(med_list):
+        if med1 not in drug_db:
+            continue
+        
+        drug_info = drug_db[med1]
+        
+        # Check against other medications
+        for med2 in med_list[i+1:]:
+            if med2 in drug_info.get('dangerous', []):
+                interactions.append({
+                    'drug1': med1,
+                    'drug2': med2,
+                    'severity': drug_info['level'],
+                    'warning': f"Potentially dangerous interaction between {med1.title()} and {med2.title()}",
+                    'note': drug_info.get('note', ''),
+                    'alternatives': drug_info.get('alternatives', [])
+                })
+    
+    # Check for allergy contraindications
+    for allergy in patient_allergies:
+        if allergy in allergy_db:
+            contraindicated_meds = allergy_db[allergy]
+            for med in med_list:
+                if med in contraindicated_meds:
+                    allergy_warnings.append({
+                        'allergy': allergy.title(),
+                        'medication': med.title(),
+                        'warning': f'PATIENT ALLERGY: {allergy.title()} class - AVOID {med.title()}',
+                        'severity': 'CRITICAL',
+                        'alternatives': drug_db.get(med, {}).get('alternatives', [])
+                    })
+    
+    # Generate recommendations
+    if not interactions and not allergy_warnings:
+        recommendations.append({
+            'status': 'safe',
+            'message': 'No significant drug interactions detected',
+            'review_note': 'Consult with pharmacist or doctor before dispensing'
+        })
+    else:
+        if interactions:
+            recommendations.append({
+                'status': 'warning',
+                'message': f'{len(interactions)} potential interaction(s) detected',
+                'action': 'Review with prescribing doctor'
+            })
+        if allergy_warnings:
+            recommendations.append({
+                'status': 'critical',
+                'message': 'ALLERGY CONTRAINDICATION - DO NOT PRESCRIBE',
+                'action': 'Use alternative medications'
+            })
+    
+    # Log audit for drug check
+    log_audit(uid, 'drug_interaction_check', 'medications', None,
+             {'medications': med_list, 'interaction_count': len(interactions)})
+    
+    # Store drug interaction check result
+    try:
+        cur.execute('''
+            CREATE TABLE IF NOT EXISTS drug_checks (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                user_id INT,
+                medications JSON,
+                allergies JSON,
+                interaction_count INT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users(id),
+                INDEX idx_user (user_id)
+            )
+        ''')
+        
+        cur.execute('''
+            INSERT INTO drug_checks (user_id, medications, allergies, interaction_count)
+            VALUES (%s, %s, %s, %s)
+        ''', (uid, json.dumps(med_list), json.dumps(patient_allergies), len(interactions)))
+        db.commit()
+    except Exception as e:
+        print(f"Drug check logging error: {e}")
+    
+    return jsonify({
+        'status': 'ok',
+        'interactions': interactions,
+        'allergy_warnings': allergy_warnings,
+        'recommendations': recommendations,
+        'summary': {
+            'total_interactions': len(interactions),
+            'total_allergies': len(allergy_warnings),
+            'safe_to_prescribe': len(allergy_warnings) == 0 and len(interactions) == 0
+        }
+    })
+
+
+# ==================== TELEMEDICINE NETWORK FOR RURAL CLINICS ====================
+
+@app.route('/clinic-network/register', methods=['POST'])
+def register_clinic():
+    """Register a rural clinic in the telemedicine network."""
+    current_user = get_current_user()
+    if not current_user or current_user.get('role') not in ('doctor', 'dev'):
+        return jsonify({'error': 'Forbidden - Doctors only'}), 403
+    
+    uid = current_user.get('id') or current_user.get('sub')
+    data = request.get_json() or {}
+    
+    clinic_name = data.get('clinic_name')
+    location_lat = data.get('latitude')
+    location_lng = data.get('longitude')
+    clinic_type = data.get('clinic_type', 'rural_clinic')  # rural_clinic, health_center, hospital
+    equipment = data.get('equipment', [])  # ['lab', 'ultrasound', 'xray', 'ct_scan', 'blood_bank']
+    contact_phone = data.get('contact_phone')
+    operating_hours = data.get('operating_hours')  # {'monday': ['08:00', '17:00'], ...}
+    
+    if not clinic_name or location_lat is None or location_lng is None:
+        return jsonify({'error': 'clinic_name, latitude, longitude required'}), 400
+    
+    # Validate location
+    is_valid, error_msg = validate_location(location_lat, location_lng)
+    if not is_valid:
+        return jsonify({'error': error_msg}), 400
+    
+    db = get_db()
+    cur = db.cursor()
+    
+    try:
+        # Create clinic_network table if it doesn't exist
+        cur.execute('''
+            CREATE TABLE IF NOT EXISTS clinic_network (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                doctor_user_id INT,
+                clinic_name VARCHAR(200),
+                clinic_type VARCHAR(50),
+                latitude DECIMAL(10, 8),
+                longitude DECIMAL(11, 8),
+                equipment JSON,
+                contact_phone VARCHAR(20),
+                operating_hours JSON,
+                is_active BOOLEAN DEFAULT TRUE,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                FOREIGN KEY (doctor_user_id) REFERENCES users(id),
+                INDEX idx_location (latitude, longitude),
+                INDEX idx_type (clinic_type)
+            )
+        ''')
+        
+        cur.execute('''
+            INSERT INTO clinic_network 
+            (doctor_user_id, clinic_name, clinic_type, latitude, longitude, equipment, contact_phone, operating_hours)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+        ''', (uid, clinic_name, clinic_type, location_lat, location_lng, 
+              json.dumps(equipment), contact_phone, json.dumps(operating_hours or {})))
+        
+        clinic_id = cur.lastrowid
+        db.commit()
+        
+        # Log audit
+        log_audit(uid, 'clinic_registered', 'clinic_network', clinic_id,
+                 {'clinic_name': clinic_name, 'type': clinic_type, 'equipment': equipment})
+        
+        return jsonify({
+            'status': 'ok',
+            'clinic_id': clinic_id,
+            'message': f'Clinic "{clinic_name}" registered in telemedicine network'
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/clinic-network/nearby', methods=['POST'])
+def find_nearby_clinics():
+    """Find nearby clinics with specific equipment/capabilities."""
+    current_user = get_current_user()
+    if not current_user:
+        return jsonify({'error': 'Unauthorized'}), 401
+    
+    data = request.get_json() or {}
+    location_lat = data.get('latitude')
+    location_lng = data.get('longitude')
+    radius_km = data.get('radius_km', 50)  # Search within 50km
+    required_equipment = data.get('required_equipment', [])
+    
+    if location_lat is None or location_lng is None:
+        return jsonify({'error': 'latitude and longitude required'}), 400
+    
+    # Validate location
+    is_valid, error_msg = validate_location(location_lat, location_lng)
+    if not is_valid:
+        return jsonify({'error': error_msg}), 400
+    
+    db = get_db()
+    cur = db.cursor()
+    
+    try:
+        # Find clinics within radius with haversine distance
+        query = f'''
+            SELECT 
+                id, doctor_user_id, clinic_name, clinic_type, 
+                latitude, longitude, equipment, contact_phone, operating_hours,
+                (6371 * acos(
+                    cos(radians(%s)) * cos(radians(latitude)) *
+                    cos(radians(longitude) - radians(%s)) +
+                    sin(radians(%s)) * sin(radians(latitude))
+                )) AS distance_km
+            FROM clinic_network
+            WHERE is_active = TRUE
+            AND (6371 * acos(
+                cos(radians(%s)) * cos(radians(latitude)) *
+                cos(radians(longitude) - radians(%s)) +
+                sin(radians(%s)) * sin(radians(latitude))
+            )) <= %s
+            ORDER BY distance_km ASC
+            LIMIT 10
+        '''
+        
+        cur.execute(query, (location_lat, location_lng, location_lat,
+                           location_lat, location_lng, location_lat, radius_km))
+        
+        clinics = []
+        for clinic_row in cur.fetchall():
+            clinic_dict = dict(clinic_row)
+            equipment = json.loads(clinic_dict.get('equipment') or '[]')
+            
+            # Check if clinic has required equipment
+            has_required = all(eq in equipment for eq in required_equipment) if required_equipment else True
+            
+            clinic_dict['equipment'] = equipment
+            clinic_dict['operating_hours'] = json.loads(clinic_dict.get('operating_hours') or '{}')
+            clinic_dict['has_required_equipment'] = has_required
+            clinics.append(clinic_dict)
+        
+        return jsonify({
+            'status': 'ok',
+            'clinics': clinics,
+            'total': len(clinics),
+            'search_params': {
+                'latitude': location_lat,
+                'longitude': location_lng,
+                'radius_km': radius_km,
+                'required_equipment': required_equipment
+            }
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/clinic-network/request-test', methods=['POST'])
+def request_test_from_clinic():
+    """Doctor requests test result from rural clinic for patient."""
+    current_user = get_current_user()
+    if not current_user or current_user.get('role') != 'doctor':
+        return jsonify({'error': 'Forbidden - Doctors only'}), 403
+    
+    doctor_id = current_user.get('id') or current_user.get('sub')
+    data = request.get_json() or {}
+    
+    clinic_id = data.get('clinic_id')
+    patient_id = data.get('patient_id')
+    test_type = data.get('test_type')  # 'blood_work', 'imaging', 'biopsy', etc.
+    test_description = data.get('test_description')
+    urgency = data.get('urgency', 'routine')  # routine, urgent, emergency
+    
+    if not all([clinic_id, patient_id, test_type, test_description]):
+        return jsonify({'error': 'clinic_id, patient_id, test_type, test_description required'}), 400
+    
+    db = get_db()
+    cur = db.cursor()
+    
+    try:
+        # Create test_requests table if it doesn't exist
+        cur.execute('''
+            CREATE TABLE IF NOT EXISTS test_requests (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                requesting_doctor_id INT,
+                clinic_id INT,
+                patient_id INT,
+                test_type VARCHAR(100),
+                test_description TEXT,
+                urgency VARCHAR(20),
+                status VARCHAR(20) DEFAULT 'pending',
+                results TEXT,
+                results_date TIMESTAMP NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (requesting_doctor_id) REFERENCES users(id),
+                FOREIGN KEY (clinic_id) REFERENCES clinic_network(id),
+                FOREIGN KEY (patient_id) REFERENCES users(id),
+                INDEX idx_clinic (clinic_id),
+                INDEX idx_status (status)
+            )
+        ''')
+        
+        cur.execute('''
+            INSERT INTO test_requests 
+            (requesting_doctor_id, clinic_id, patient_id, test_type, test_description, urgency)
+            VALUES (%s, %s, %s, %s, %s, %s)
+        ''', (doctor_id, clinic_id, patient_id, test_type, test_description, urgency))
+        
+        request_id = cur.lastrowid
+        db.commit()
+        
+        # Get clinic info for notification
+        cur.execute('SELECT clinic_name, contact_phone FROM clinic_network WHERE id = %s', (clinic_id,))
+        clinic = cur.fetchone()
+        clinic_name = clinic['clinic_name'] if clinic else 'Clinic'
+        clinic_phone = clinic['contact_phone'] if clinic else None
+        
+        # Send SMS to clinic if available
+        if clinic_phone and HAS_TWILIO:
+            try:
+                message = f"Test Request: {test_type} for patient ID {patient_id}. Urgency: {urgency}. Description: {test_description[:80]}"
+                twilio_client.messages.create(
+                    body=message,
+                    from_=TWILIO_PHONE_NUMBER,
+                    to=clinic_phone
+                )
+            except Exception as e:
+                print(f"SMS notification error: {e}")
+        
+        # Log audit
+        log_audit(doctor_id, 'test_request_sent', 'test_requests', request_id,
+                 {'clinic': clinic_name, 'test': test_type, 'urgency': urgency})
+        
+        return jsonify({
+            'status': 'ok',
+            'request_id': request_id,
+            'clinic': clinic_name,
+            'message': f'Test request sent to {clinic_name}'
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/clinic-network/test-results', methods=['GET', 'POST'])
+def manage_test_results():
+    """Clinic submits or doctor retrieves test results."""
+    current_user = get_current_user()
+    if not current_user:
+        return jsonify({'error': 'Unauthorized'}), 401
+    
+    if request.method == 'GET':
+        # Doctor retrieves test results
+        uid = current_user.get('id') or current_user.get('sub')
+        db = get_db()
+        cur = db.cursor()
+        
+        cur.execute('''
+            SELECT tr.id, tr.test_type, tr.test_description, tr.status, 
+                   tr.results, tr.results_date, tr.urgency,
+                   cn.clinic_name, u.full_name AS patient_name
+            FROM test_requests tr
+            LEFT JOIN clinic_network cn ON tr.clinic_id = cn.id
+            LEFT JOIN users u ON tr.patient_id = u.id
+            WHERE tr.requesting_doctor_id = %s
+            ORDER BY tr.created_at DESC
+            LIMIT 50
+        ''', (uid,))
+        
+        results = [dict(r) for r in cur.fetchall()]
+        return jsonify({'test_results': results})
+    
+    else:  # POST
+        # Clinic submits test results
+        if current_user.get('role') not in ('doctor', 'dev'):
+            return jsonify({'error': 'Forbidden'}), 403
+        
+        uid = current_user.get('id') or current_user.get('sub')
+        data = request.get_json() or {}
+        
+        request_id = data.get('request_id')
+        results_text = data.get('results')
+        
+        if not request_id or not results_text:
+            return jsonify({'error': 'request_id and results required'}), 400
+        
+        db = get_db()
+        cur = db.cursor()
+        
+        try:
+            cur.execute('''
+                UPDATE test_requests
+                SET status = 'completed', results = %s, results_date = NOW()
+                WHERE id = %s
+            ''', (results_text, request_id))
+            db.commit()
+            
+            # Get requesting doctor info and notify
+            cur.execute('''
+                SELECT tr.requesting_doctor_id, u.full_name
+                FROM test_requests tr
+                LEFT JOIN users u ON tr.requesting_doctor_id = u.id
+                WHERE tr.id = %s
+            ''', (request_id,))
+            
+            requesting_doc = cur.fetchone()
+            if requesting_doc:
+                doctor_id = requesting_doc['requesting_doctor_id']
+                log_audit(uid, 'test_results_submitted', 'test_requests', request_id,
+                         {'submitted_by': 'clinic'})
+            
+            return jsonify({
+                'status': 'ok',
+                'message': 'Test results submitted and will be available to requesting doctor'
+            })
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
 
 
 @app.route('/appointments', methods=['GET', 'POST'])
@@ -3471,6 +4318,57 @@ def admin_delete_user():
     cur.execute('DELETE FROM users WHERE id = %s', (uid,))
     db.commit()
     return jsonify({'status': 'ok'})
+
+
+@app.route('/admin/audit-logs', methods=['GET'])
+def admin_audit_logs():
+    """Get audit logs for compliance/HIPAA audits (admin only)."""
+    current_user = get_current_user()
+    if not current_user or current_user.get('role') != 'dev':
+        return jsonify({'error': 'Forbidden - Admin access required'}), 403
+    
+    # Query parameters
+    user_id = request.args.get('user_id', type=int)
+    days = request.args.get('days', default=7, type=int)
+    limit = request.args.get('limit', default=100, type=int)
+    
+    db = get_db()
+    cur = db.cursor()
+    
+    # Ensure audit_logs table exists
+    cur.execute('''
+        CREATE TABLE IF NOT EXISTS audit_logs (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            user_id INT,
+            action VARCHAR(100),
+            resource_type VARCHAR(100),
+            resource_id INT,
+            details JSON,
+            timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            ip_address VARCHAR(45),
+            user_agent VARCHAR(500),
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL,
+            INDEX idx_user_timestamp (user_id, timestamp),
+            INDEX idx_resource (resource_type, resource_id)
+        )
+    ''')
+    
+    # Query logs
+    query = 'SELECT * FROM audit_logs WHERE timestamp > DATE_SUB(NOW(), INTERVAL %s DAY)'
+    params = [days]
+    
+    if user_id:
+        query += ' AND user_id = %s'
+        params.append(user_id)
+    
+    query += ' ORDER BY timestamp DESC LIMIT %s'
+    params.append(limit)
+    
+    cur.execute(query, params)
+    rows = cur.fetchall()
+    logs = [dict(r) for r in rows]
+    
+    return jsonify({'audit_logs': logs, 'total': len(logs), 'retention_days': 90})
 
 
 @app.route('/setup/create_dev', methods=['POST'])

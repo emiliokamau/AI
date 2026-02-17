@@ -1,5 +1,6 @@
 Flask>=2.0.0
 flask-cors>=3.0.10
+flask-limiter>=3.5.0
 google-genai>=1.52.0
 google-auth>=2.43.0
 PyJWT>=2.10.1
@@ -11,3 +12,4 @@ PyMySQL>=1.1.1
 psycopg2-binary>=2.9.0
 requests>=2.32.0
 gunicorn>=21.0.0
+twilio>=9.0.0
