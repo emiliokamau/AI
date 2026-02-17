@@ -96,9 +96,7 @@ def init_db():
     database_url = os.environ.get('DATABASE_URL')
     if database_url:
         config = parse_database_url(database_url)
-        if config['engine'] == 'postgresql':
-            # Postgres detected (Render). Skip MySQL-specific init.
-            return
+        # Use DATABASE_URL credentials for all operations
         host = config['host']
         user = config['user']
         password = config['password']
