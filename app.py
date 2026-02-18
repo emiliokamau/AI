@@ -29,6 +29,14 @@ from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from cryptography.fernet import Fernet
 
+# Import USSD module for handling phone-based access
+try:
+    from ussd_module import ussd_bp
+    HAS_USSD = True
+except Exception as e:
+    HAS_USSD = False
+    print(f"Warning: USSD module not available: {e}")
+
 try:
     from google import genai
     from google.genai import types
@@ -779,6 +787,13 @@ try:
 except ImportError:
     twilio_client = None
     HAS_TWILIO = False
+
+# Register USSD blueprint if available
+if HAS_USSD:
+    app.register_blueprint(ussd_bp, url_prefix='/ussd')
+    print("✓ USSD module registered")
+else:
+    print("✗ USSD module not available")
 
 assistant = PatientAIAssistant()
 init_db()
@@ -3625,8 +3640,8 @@ def search_medical_codes():
 
 
 @app.route('/ai/drug_interactions', methods=['POST'])
-def check_drug_interactions():
-    """Check for dangerous drug interactions."""
+def check_drug_interactions_ai():
+    """Check for dangerous drug interactions using AI."""
     current_user = get_current_user()
     if not current_user:
         return jsonify({'error': 'Unauthorized'}), 401
