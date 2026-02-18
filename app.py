@@ -5897,6 +5897,316 @@ def health_check():
     }), http_status
 
 
+@app.route('/doctor/send-notification', methods=['POST'])
+def doctor_send_notification():
+    """
+    Doctor sends a notification/alert to a patient.
+    
+    Request body:
+    {
+        "patient_id": <int>,
+        "title": <string>,
+        "message": <string>,
+        "priority": "normal" | "urgent" | "emergency",
+        "type": "treatment" | "medication" | "appointment" | "general"
+    }
+    """
+    current_user = get_current_user()
+    if not current_user:
+        return jsonify({'error': 'Unauthorized'}), 401
+    
+    # Only doctors can send notifications
+    if current_user.get('role') not in ('doctor', 'dev'):
+        return jsonify({'error': 'Only doctors can send notifications'}), 403
+    
+    data = request.get_json() or {}
+    patient_id = data.get('patient_id')
+    title = (data.get('title') or '').strip()
+    message = (data.get('message') or '').strip()
+    priority = (data.get('priority') or 'normal').lower()
+    notif_type = (data.get('type') or 'general').lower()
+    
+    if not patient_id or not title or not message:
+        return jsonify({'error': 'patient_id, title, and message are required'}), 400
+    
+    if priority not in ('normal', 'urgent', 'emergency'):
+        return jsonify({'error': 'priority must be normal, urgent, or emergency'}), 400
+    
+    if notif_type not in ('treatment', 'medication', 'appointment', 'general'):
+        return jsonify({'error': 'type must be treatment, medication, appointment, or general'}), 400
+    
+    db = get_db()
+    cur = db.cursor()
+    try:
+        # Verify patient exists
+        cur.execute("SELECT id, email FROM users WHERE id = %s AND role = 'patient'", (patient_id,))
+        patient = cur.fetchone()
+        if not patient:
+            return jsonify({'error': 'Patient not found'}), 404
+        
+        patient_email = patient.get('email')
+        
+        # Create in-app notification
+        notification_data = {
+            'from_doctor_id': current_user.get('id'),
+            'doctor_name': current_user.get('full_name') or current_user.get('username'),
+            'priority': priority,
+            'type': notif_type
+        }
+        
+        cur.execute(
+            """INSERT INTO notifications 
+            (user_id, type, title, body, data, is_read, created_at)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)""",
+            (patient_id, f'doctor_{priority}', title, message, json.dumps(notification_data), 0, datetime.utcnow())
+        )
+        notification_id = cur.lastrowid
+        
+        # Log this action for audit
+        cur.execute(
+            """INSERT INTO audit (actor_id, action, target_id, details, timestamp)
+            VALUES (%s, %s, %s, %s, %s)""",
+            (current_user.get('id'), f'doctor_notification_{priority}', patient_id, 
+             f"Sent {priority} notification: {title}", datetime.utcnow())
+        )
+        
+        db.commit()
+        
+        # Send email notification if patient has email
+        if patient_email:
+            subject = f"[{priority.upper()}] {title} - from Dr. {current_user.get('full_name') or current_user.get('username')}"
+            email_body = f"""
+Dear Patient,
+
+You have received a notification from your doctor:
+
+Title: {title}
+Priority: {priority.upper()}
+Type: {notif_type.title()}
+
+Message:
+{message}
+
+Please log in to your Medical AI dashboard to view more details.
+
+Best regards,
+Medical AI Team
+"""
+            send_email_notification(patient_email, subject, email_body)
+        
+        # Send SMS if urgent/emergency and patient has phone
+        if priority in ('urgent', 'emergency'):
+            phone = get_user_phone(patient_id)
+            if phone:
+                sms_body = f"[{priority.upper()}] {title}: {message[:50]}... Check your Medical AI app."
+                send_sms_notification(phone, sms_body)
+        
+        return jsonify({
+            'success': True, 
+            'notification_id': notification_id,
+            'message': f'Notification sent to patient successfully'
+        }), 201
+        
+    except Exception as e:
+        db.rollback()
+        return jsonify({'error': str(e)}), 500
+    finally:
+        cur.close()
+
+
+@app.route('/doctor/patients/<int:patient_id>/notifications', methods=['GET'])
+def doctor_get_patient_notifications(patient_id):
+    """Get all notifications sent to a specific patient by the current doctor."""
+    current_user = get_current_user()
+    if not current_user:
+        return jsonify({'error': 'Unauthorized'}), 401
+    
+    if current_user.get('role') not in ('doctor', 'dev'):
+        return jsonify({'error': 'Only doctors can access this'}), 403
+    
+    db = get_db()
+    cur = db.cursor()
+    try:
+        # Verify patient exists
+        cur.execute("SELECT id FROM users WHERE id = %s AND role = 'patient'", (patient_id,))
+        if not cur.fetchone():
+            return jsonify({'error': 'Patient not found'}), 404
+        
+        # Get notifications sent by any doctor (for dev) or doctor's own notifications
+        if current_user.get('role') == 'dev':
+            cur.execute(
+                """SELECT id, type, title, body, data, is_read, created_at 
+                FROM notifications 
+                WHERE user_id = %s AND type LIKE 'doctor_%'
+                ORDER BY created_at DESC""",
+                (patient_id,)
+            )
+        else:
+            cur.execute(
+                """SELECT n.id, n.type, n.title, n.body, n.data, n.is_read, n.created_at 
+                FROM notifications n 
+                WHERE n.user_id = %s AND n.type LIKE 'doctor_%'
+                ORDER BY n.created_at DESC""",
+                (patient_id,)
+            )
+        
+        notifications = [dict(row) for row in cur.fetchall()]
+        return jsonify({'notifications': notifications})
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+    finally:
+        cur.close()
+
+
+@app.route('/doctor/send-system-notification', methods=['POST'])
+def doctor_send_system_notification():
+    """
+    Doctor sends a system notification to ALL patients or specific patient list.
+    Used for mass alerts, clinic closures, policy changes, etc.
+    
+    Request body:
+    {
+        "title": <string>,
+        "message": <string>,
+        "patients_ids": [<int>, ...] or null for all patients,
+        "priority": "normal" | "urgent"
+    }
+    """
+    current_user = get_current_user()
+    if not current_user:
+        return jsonify({'error': 'Unauthorized'}), 401
+    
+    # Only doctors/staff can send system notifications
+    if current_user.get('role') not in ('doctor', 'staff', 'dev'):
+        return jsonify({'error': 'Insufficient permissions'}), 403
+    
+    data = request.get_json() or {}
+    title = (data.get('title') or '').strip()
+    message = (data.get('message') or '').strip()
+    patient_ids = data.get('patients_ids')
+    priority = (data.get('priority') or 'normal').lower()
+    
+    if not title or not message:
+        return jsonify({'error': 'title and message are required'}), 400
+    
+    db = get_db()
+    cur = db.cursor()
+    sent_count = 0
+    
+    try:
+        # Get target patients
+        if patient_ids:
+            placeholders = ','.join(['%s'] * len(patient_ids))
+            cur.execute(f"SELECT id, email FROM users WHERE id IN ({placeholders}) AND role = 'patient'", patient_ids)
+        else:
+            cur.execute("SELECT id, email FROM users WHERE role = 'patient'")
+        
+        patients = cur.fetchall()
+        
+        notification_data = {
+            'from_doctor_id': current_user.get('id'),
+            'doctor_name': current_user.get('full_name') or current_user.get('username'),
+            'system_broadcast': True,
+            'priority': priority
+        }
+        
+        for patient in patients:
+            patient_id = patient.get('id')
+            patient_email = patient.get('email')
+            
+            # Create notification
+            cur.execute(
+                """INSERT INTO notifications 
+                (user_id, type, title, body, data, is_read, created_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)""",
+                (patient_id, f'system_{priority}', title, message, json.dumps(notification_data), 0, datetime.utcnow())
+            )
+            
+            # Send email
+            if patient_email:
+                subject = f"[SYSTEM] {title}"
+                email_body = f"""
+Dear Patient,
+
+Important notification from Medical AI system:
+
+{title}
+
+{message}
+
+Please log in to your dashboard for more information.
+
+Best regards,
+Medical AI Team
+"""
+                send_email_notification(patient_email, subject, email_body)
+            
+            sent_count += 1
+        
+        # Log action
+        cur.execute(
+            """INSERT INTO audit (actor_id, action, target_id, details, timestamp)
+            VALUES (%s, %s, %s, %s, %s)""",
+            (current_user.get('id'), 'system_notification_broadcast', None, 
+             f"System notification sent to {sent_count} patients: {title}", datetime.utcnow())
+        )
+        
+        db.commit()
+        
+        return jsonify({
+            'success': True,
+            'sent_count': sent_count,
+            'message': f'System notification sent to {sent_count} patient(s)'
+        }), 201
+        
+    except Exception as e:
+        db.rollback()
+        return jsonify({'error': str(e)}), 500
+    finally:
+        cur.close()
+
+
+@app.route('/patient/notifications/from-doctors', methods=['GET'])
+def patient_get_doctor_notifications():
+    """Patients can view all doctor notifications they've received."""
+    current_user = get_current_user()
+    if not current_user:
+        return jsonify({'error': 'Unauthorized'}), 401
+    
+    user_id = current_user.get('id') or current_user.get('sub')
+    db = get_db()
+    cur = db.cursor()
+    
+    try:
+        cur.execute(
+            """SELECT id, type, title, body, data, is_read, created_at 
+            FROM notifications 
+            WHERE user_id = %s AND (type LIKE 'doctor_%' OR type LIKE 'system_%')
+            ORDER BY created_at DESC
+            LIMIT 100""",
+            (user_id,)
+        )
+        
+        notifications = []
+        for row in cur.fetchall():
+            notif = dict(row)
+            # Parse doctor info from data JSON
+            if notif.get('data'):
+                try:
+                    notif['data'] = json.loads(notif['data'])
+                except:
+                    notif['data'] = {}
+            notifications.append(notif)
+        
+        return jsonify({'notifications': notifications})
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+    finally:
+        cur.close()
+
+
 @app.route('/test/notifications', methods=['POST'])
 def test_notifications():
     """Test endpoint to verify email and SMS delivery"""
