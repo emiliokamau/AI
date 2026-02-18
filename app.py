@@ -4,9 +4,18 @@ This file exposes a simple HTTP API the `dashboard.html` frontend can call.
 It uses the existing PatientAIAssistant logic and adds MySQL persistence,
 basic token auth, CORS for local testing, and endpoints for doctor alerts.
 
+Features:
+- USSD integration for 2G phone access
+- SMS/WhatsApp emergency triage via Twilio
+- AI-powered symptom checker
+- Doctor matching and booking
+- Health records management
+- HIPAA-compliant audit logging
+
 Notes:
 - Requires environment variables: GEMINI_API_KEY (for Google GenAI) and DEV_API_KEY (simple header token for prototype).
 - Install dependencies with `pip install -r requirements.txt`.
+- USSD module handles phone-based access via /ussd/callback endpoint
 """
 
 import os
