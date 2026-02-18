@@ -105,7 +105,7 @@ All Python code remains compatible:
 DB_HOST=localhost
 DB_PORT=3306
 DB_USER=root
-DB_PASSWORD=42125811Kamau
+DB_PASSWORD=[REDACTED]
 DB_NAME=medical_ai
 → Uses PyMySQL (MySQL connection)
 ```
@@ -155,7 +155,7 @@ DATABASE_URL=mysql://user:pass@host:port/db
 ```
 FLASK_ENV=production
 CORS_ORIGINS=http://localhost:5000
-GEMINI_API_KEY=AIzaSyBmrPjE9kPdR4_g61vQfFUuRUNXAlw5VIQ
+GEMINI_API_KEY=[REDACTED]
 SENDGRID_API_KEY=[your-key]
 SENDGRID_FROM_EMAIL=emiliokamau35@gmail.com
 ```

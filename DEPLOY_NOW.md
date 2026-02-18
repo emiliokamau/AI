@@ -57,7 +57,7 @@ Paste these variables:
 ```
 FLASK_ENV=production
 CORS_ORIGINS=http://localhost:5000
-GEMINI_API_KEY=AIzaSyBmrPjE9kPdR4_g61vQfFUuRUNXAlw5VIQ
+GEMINI_API_KEY=[REDACTED]
 SENDGRID_API_KEY=SG.xxxxxxxxxxxxxxxxxxx
 SENDGRID_FROM_EMAIL=emiliokamau35@gmail.com
 ```

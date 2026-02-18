@@ -59,7 +59,7 @@ Add the following:
 ```
 FLASK_ENV=production
 CORS_ORIGINS=http://localhost:5000,https://yourdomain.vercel.app
-GEMINI_API_KEY=AIzaSyBmrPjE9kPdR4_g61vQfFUuRUNXAlw5VIQ
+GEMINI_API_KEY=[REDACTED]
 SENDGRID_API_KEY=[your-sendgrid-key]
 SENDGRID_FROM_EMAIL=emiliokamau35@gmail.com
 DATABASE_URL=[Auto-provided by Railway MySQL plugin]
@@ -183,7 +183,7 @@ curl https://api-production-xxxxx.railway.app/health
 
 ### For Testing Phase
 - ✅ Current credentials OK (used for testing)
-- DB password: `42125811Kamau` (in Railway vault, not exposed)
+- DB password: `[REDACTED]` (in Railway vault, not exposed)
 - Gemini API key: (in Railway vault, not exposed)
 
 ### Pre-Market Release (Week 2-3)

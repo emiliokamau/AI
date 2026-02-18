@@ -27,8 +27,8 @@ Your Medical AI Assistant platform is **production-ready** with 5 critical fixes
 
 ### 1️⃣ ROTATE CREDENTIALS (30 min) 🚨
 **CRITICAL**: Your `.env` file is in git with real passwords exposed
-- Database password visible: `42125811Kamau`
-- API key visible: `AIzaSyBmrPjE9kPdR4_g61vQfFUuRUNXAlw5VIQ`
+- Database password visible: `[REDACTED]`
+- API key visible: `[REDACTED]`
 
 **Action**: 
 - Rotate DB password

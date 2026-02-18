@@ -135,8 +135,8 @@ Go to: https://vercel.com
 
 ## 💼 CREDENTIALS (For Testing Phase)
 
-Database Password: `42125811Kamau`  
-Gemini API Key: `AIzaSyBmrPjE9kPdR4_g61vQfFUuRUNXAlw5VIQ`  
+Database Password: `[REDACTED]`  
+Gemini API Key: `[REDACTED]`  
 
 *Note: These will be rotated before market launch*
 

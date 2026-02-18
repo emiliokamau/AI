@@ -57,8 +57,8 @@
 **File**: `.env`  
 **Issue**: Hardcoded production credentials in repository
 ```
-DB_PASSWORD=42125811Kamau
-GEMINI_API_KEY=AIzaSyBmrPjE9kPdR4_g61vQfFUuRUNXAlw5VIQ
+DB_PASSWORD=[REDACTED]
+GEMINI_API_KEY=[REDACTED]
 ```
 **Impact**: CRITICAL - Security breach  
 **Action Required**:

@@ -241,8 +241,8 @@ git push origin main
 ## 💡 IMPORTANT REMINDERS
 
 ✅ **Keep current credentials for testing**
-- DB: `42125811Kamau`
-- API: `AIzaSyBmrPjE9kPdR4_g61vQfFUuRUNXAlw5VIQ`
+- DB: `[REDACTED]`
+- API: `[REDACTED]`
 - SendGrid: [current]
 
 ⚠️ **Before market launch** (in 2-3 weeks):

@@ -1,6 +1,6 @@
 # TESTING PHASE DEPLOYMENT PLAN
 
-**Decision**: Use current credentials (42125811Kamau / AIzaSyBmrPjE9...) for testing  
+**Decision**: Use current credentials ([REDACTED] / [REDACTED]...) for testing  
 **Credential Rotation**: Deferred to pre-market release (2-3 weeks)  
 **Current Status**: Ready for internal testing  
 **Timeline**: Deploy today, test thoroughly, rotate before market launch  
@@ -46,7 +46,7 @@
 ```
 Deploy to Railway (backend):
 ├─ URL: https://yourdomain.railway.app
-├─ Credentials: 42125811Kamau / AIzaSyBmrPjE9...
+├─ Credentials: [REDACTED] / [REDACTED]...
 ├─ Test: Login, chat, notifications
 └─ Monitor: Error logs for issues
 
@@ -78,12 +78,12 @@ Deploy to Vercel (frontend):
 ### Pre-Release Security Hardening (30 minutes)
 
 1. **Rotate Database Password** (10 min)
-   - Current: `42125811Kamau`
+   - Current: `[REDACTED]`
    - New: Generate strong password (20+ chars)
    - Update in Railway vault
 
 2. **Regenerate Gemini API Key** (5 min)
-   - Current: `AIzaSyBmrPjE9kPdR4_g61vQfFUuRUNXAlw5VIQ`
+   - Current: `[REDACTED]`
    - Create new in Google Cloud Console
    - Update in Railway vault
 
@@ -132,8 +132,8 @@ WEEK 2-3 (Before Market Launch)
 
 ### Current (Testing Only)
 ```
-DB_PASSWORD=42125811Kamau
-GEMINI_API_KEY=AIzaSyBmrPjE9kPdR4_g61vQfFUuRUNXAlw5VIQ
+DB_PASSWORD=[REDACTED]
+GEMINI_API_KEY=[REDACTED]
 SENDGRID_API_KEY=[current]
 ```
 

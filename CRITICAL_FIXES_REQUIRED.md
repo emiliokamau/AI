@@ -11,8 +11,8 @@
 ### ⚠️ CRITICAL SECURITY ISSUE
 Your `.env` file contains production credentials and has been committed to git:
 ```
-DB_PASSWORD=42125811Kamau
-GEMINI_API_KEY=AIzaSyBmrPjE9kPdR4_g61vQfFUuRUNXAlw5VIQ
+DB_PASSWORD=[REDACTED]
+GEMINI_API_KEY=[REDACTED]
 ```
 
 ### STEPS TO FIX:
@@ -28,6 +28,8 @@ GEMINI_API_KEY=AIzaSyBmrPjE9kPdR4_g61vQfFUuRUNXAlw5VIQ
 
 # 3. Go to SendGrid dashboard and create new API key
 #    https://app.sendgrid.com/settings/api_keys
+#
+# Old credentials: [REDACTED]
 ```
 
 **Step 2: Remove .env from git history**

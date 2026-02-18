@@ -211,9 +211,9 @@ All tables:
 DB_HOST=127.0.0.1
 DB_PORT=3760
 DB_USER=root
-DB_PASSWORD=42125811Kamau         ← EXPOSED PASSWORD
+DB_PASSWORD=[REDACTED]         ← EXPOSED PASSWORD
 DB_NAME=medical_ai
-GEMINI_API_KEY=AIzaSyBmrPjE9kPdR... ← EXPOSED API KEY
+GEMINI_API_KEY=[REDACTED] ← EXPOSED API KEY
 ```
 
 **Impact**: Anyone with access to GitHub/repo has production database access  
