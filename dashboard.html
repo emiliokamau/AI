@@ -751,8 +751,18 @@
                         </div>
                         <div class="card-body">
                             <p class="text-muted small mb-3">
-                                <i class="bi bi-info-circle"></i> Describe your symptoms and let our AI find the best doctor for you based on your location
+                                <i class="bi bi-info-circle"></i> Describe your symptoms and let our AI find the best doctor for you
                             </p>
+                            
+                            <!-- Hospital Selection -->
+                            <div class="mb-3">
+                                <label class="form-label">Select Hospital (Optional)</label>
+                                <select id="hospitalSelector" class="form-select">
+                                    <option value="">-- Any Hospital --</option>
+                                </select>
+                                <small class="text-muted d-block mt-2">Leave blank to see doctors from all hospitals, or select a specific hospital to narrow recommendations</small>
+                            </div>
+                            
                             <div class="mb-3">
                                 <label class="form-label">Describe Your Symptoms</label>
                                 <textarea id="symptomInput" 
@@ -1800,6 +1810,26 @@
             // AI Doctor Recommendation
             const getRecommendationBtn = document.getElementById('getRecommendationBtn');
             if (getRecommendationBtn) {
+                // First, load hospitals on page load
+                const hospitalSelector = document.getElementById('hospitalSelector');
+                if (hospitalSelector) {
+                    fetch('/hospitals', {
+                        headers: { 'Authorization': 'Bearer ' + getToken() }
+                    })
+                    .then(r => r.json())
+                    .then(data => {
+                        if (data.hospitals) {
+                            data.hospitals.forEach(h => {
+                                const opt = document.createElement('option');
+                                opt.value = h.id;
+                                opt.textContent = h.name;
+                                hospitalSelector.appendChild(opt);
+                            });
+                        }
+                    })
+                    .catch(e => console.error('Failed to load hospitals:', e));
+                }
+                
                 getRecommendationBtn.addEventListener('click', async () => {
                     const token = getToken();
                     if (!token) { alert('Please login first'); return; }
@@ -1810,6 +1840,7 @@
                         return;
                     }
                     
+                    const hospitalId = document.getElementById('hospitalSelector')?.value;
                     const loadingDiv = document.getElementById('recommendationLoading');
                     const resultsDiv = document.getElementById('doctorRecommendations');
                     
@@ -1829,17 +1860,24 @@
                         const longitude = position.coords.longitude;
                         
                         // Get AI recommendations
+                        const payload = {
+                            symptoms: symptoms,
+                            latitude: latitude,
+                            longitude: longitude
+                        };
+                        
+                        // Add hospital_id if selected
+                        if (hospitalId) {
+                            payload.hospital_id = parseInt(hospitalId);
+                        }
+                        
                         const resp = await fetch('/ai/recommend-doctor', {
                             method: 'POST',
                             headers: {
                                 'Content-Type': 'application/json',
                                 'Authorization': 'Bearer ' + token
                             },
-                            body: JSON.stringify({
-                                symptoms: symptoms,
-                                latitude: latitude,
-                                longitude: longitude
-                            })
+                            body: JSON.stringify(payload)
                         });
                         
                         if (loadingDiv) loadingDiv.style.display = 'none';
@@ -1863,43 +1901,49 @@
                                         data.condition.urgency_level === 'urgent' ? 'warning' :
                                         data.condition.urgency_level === 'moderate' ? 'info' : 'success'
                                     }">${data.condition.urgency_level.toUpperCase()}</span>
+                                    ${data.hospital_filtered ? `<br><span class="badge bg-secondary">Filtered to: ${data.hospital_id}</span>` : ''}
                                 </small>
                             </div>
                             <h6 class="mt-3">Recommended Doctors (Ranked by Match)</h6>
                         `;
                         
                         if (data.recommended_doctors.length === 0) {
-                            html += '<p class="text-muted">No doctors found in your area. Try a different location.</p>';
+                            html += '<p class="text-muted">No doctors found matching your criteria. Try adjusting your hospital selection or symptoms.</p>';
                         } else {
                             html += '<div class="list-group">';
                             data.recommended_doctors.forEach(doc => {
-                                const matchPercent = Math.min(100, Math.round(doc.match_score));
+                                const matchPercent = Math.min(100, Math.round(doc.match_score || 70));
+                                const overallRating = doc.overall_rating || 0;
+                                const totalReviews = doc.total_reviews || 0;
+                                const satScore = doc.patient_satisfaction_score || 0;
+                                
                                 html += `
-                                    <button type="button" class="list-group-item list-group-item-action" 
-                                            onclick="selectRecommendedDoctor(${doc.id}, '${doc.name.replace(/'/g, "\\'")}', ${doc.hospital_id})">
+                                    <div class="list-group-item list-group-item-action" 
+                                         onclick="selectRecommendedDoctor(${doc.user_id}, '${doc.full_name.replace(/'/g, "\\'")}', ${doc.hospital_id})">
                                         <div class="d-flex justify-content-between align-items-start w-100">
-                                            <div>
-                                                <h6 class="mb-1"><strong>${doc.name}</strong></h6>
+                                            <div style="flex:1;">
+                                                <h6 class="mb-1"><strong>${doc.full_name}</strong></h6>
                                                 <p class="mb-1 text-muted small">
-                                                    <i class="bi bi-hospital"></i> ${doc.hospital_name}
+                                                    <i class="bi bi-hospital"></i> ${doc.hospital_name || 'N/A'}
                                                 </p>
-                                                <p class="mb-0 small">
-                                                    <i class="bi bi-briefcase"></i> ${doc.specialization} • 
-                                                    <i class="bi bi-award"></i> ${doc.experience_years} years
+                                                <p class="mb-2 small">
+                                                    <i class="bi bi-briefcase"></i> ${doc.specialization || 'General Medicine'} • 
+                                                    <i class="bi bi-award"></i> ${doc.experience_years || 0} years
                                                 </p>
+                                                <div class="small">
+                                                    <span class="badge bg-warning text-dark me-1">
+                                                        <i class="bi bi-star-fill"></i> ${overallRating.toFixed(1)}/5
+                                                    </span>
+                                                    <span class="text-muted">${totalReviews} reviews</span>
+                                                    <br>
+                                                    <span class="text-muted">Satisfaction: ${satScore.toFixed(1)}/5 • ${doc.completed_appointments || 0} completed</span>
+                                                </div>
                                             </div>
                                             <div class="text-end">
                                                 <span class="badge bg-success mb-2" style="font-size: 0.9rem;">${matchPercent}% Match</span>
-                                                <br>
-                                                <small class="text-muted d-block">
-                                                    <i class="bi bi-geo-alt"></i> ${doc.distance_km} km
-                                                </small>
-                                                <small class="text-warning d-block">
-                                                    <i class="bi bi-star-fill"></i> ${doc.rating}/5
-                                                </small>
                                             </div>
                                         </div>
-                                    </button>
+                                    </div>
                                 `;
                             });
                             html += '</div>';

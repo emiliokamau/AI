@@ -2227,15 +2227,17 @@ def find_matching_doctors(condition, patient_lat, patient_lng):
 def recommend_doctor():
     """
     AI-powered doctor recommendation based on symptoms and location.
+    Optionally filtered by hospital.
     
     Input JSON:
     {
         "symptoms": "chest pain, shortness of breath",
         "latitude": 1.2345,
-        "longitude": 39.6789
+        "longitude": 39.6789,
+        "hospital_id": 5  # Optional: filter to doctors at specific hospital
     }
     
-    Output: Recommended doctors ranked by specialization match, distance, and experience
+    Output: Recommended doctors ranked by specialization match, professionalism, distance, and experience
     """
     current_user = get_current_user()
     if not current_user:
@@ -2247,6 +2249,7 @@ def recommend_doctor():
     symptoms = data.get('symptoms', '').strip()
     latitude = data.get('latitude')
     longitude = data.get('longitude')
+    hospital_id = data.get('hospital_id')  # Optional hospital filter
     
     if not symptoms:
         return jsonify({'error': 'symptoms required'}), 400
@@ -2300,15 +2303,77 @@ def recommend_doctor():
                 'recommended_tests': []
             }
     
-    # Find matching doctors
-    doctors = find_matching_doctors(condition, latitude, longitude)
+    # Find matching doctors (with optional hospital filter)
+    if hospital_id:
+        doctors = find_matching_doctors_by_hospital(condition, hospital_id)
+    else:
+        doctors = find_matching_doctors(condition, latitude, longitude)
     
     return jsonify({
         'status': 'ok',
         'condition': condition,
+        'hospital_filtered': bool(hospital_id),
+        'hospital_id': hospital_id,
         'recommended_doctors': doctors,
         'message': f'Found {len(doctors)} doctors matching your symptoms'
     })
+
+
+def find_matching_doctors_by_hospital(condition, hospital_id):
+    """Find doctors matching the condition at a specific hospital, sorted by professionalism"""
+    db = get_db()
+    cur = db.cursor()
+    
+    try:
+        primary_spec = condition.get('primary_specialization', 'General Medicine').lower()
+        
+        cur.execute(
+            """
+            SELECT DISTINCT u.id, u.full_name, u.username, dp.professionalism, 
+                   dp.specialization, dp.experience_years, hd.hospital_id, h.name as hospital_name,
+                   prof.overall_rating, prof.total_reviews, prof.completed_appointments,
+                   prof.patient_satisfaction_score
+            FROM users u
+            LEFT JOIN doctor_profiles dp ON u.id = dp.user_id
+            LEFT JOIN hospital_doctors hd ON u.id = hd.doctor_user_id AND hd.is_active = TRUE
+            LEFT JOIN hospitals h ON hd.hospital_id = h.id
+            LEFT JOIN doctor_professionalism prof ON u.id = prof.doctor_user_id
+            WHERE u.role = 'doctor'
+            AND hd.hospital_id = %s
+            AND (LOWER(dp.specialization) LIKE %s OR LOWER(dp.professionalism) LIKE %s)
+            ORDER BY prof.overall_rating DESC, prof.total_reviews DESC, 
+                     dp.experience_years DESC, u.full_name ASC
+            LIMIT 10
+            """,
+            (hospital_id, f'%{primary_spec}%', f'%{primary_spec}%')
+        )
+        
+        rows = cur.fetchall()
+        doctors = []
+        
+        for row in rows:
+            doctors.append({
+                'user_id': row[0],
+                'full_name': row[1],
+                'username': row[2],
+                'professionalism': row[3],
+                'specialization': row[4],
+                'experience_years': row[5] or 0,
+                'hospital_id': row[6],
+                'hospital_name': row[7],
+                'overall_rating': float(row[8]) if row[8] else 0,
+                'total_reviews': row[9] or 0,
+                'completed_appointments': row[10] or 0,
+                'patient_satisfaction_score': float(row[11]) if row[11] else 0,
+                'match_score': calculate_match_score(condition, row[4])
+            })
+        
+        return doctors
+    except Exception as e:
+        print(f"Error finding doctors by hospital: {e}")
+        return []
+    finally:
+        cur.close()
 
 
 # ==================== PHASE 2: VIDEO CONSULTATION & AVAILABILITY ====================
@@ -6201,6 +6266,385 @@ def patient_get_doctor_notifications():
         
         return jsonify({'notifications': notifications})
         
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+    finally:
+        cur.close()
+
+
+# ==================== HOSPITAL DOCTOR MANAGEMENT SYSTEM ====================
+
+@app.route('/hospital/<int:hospital_id>/doctors', methods=['GET'])
+def get_hospital_doctors(hospital_id):
+    """Get all doctors at a specific hospital"""
+    db = get_db()
+    cur = db.cursor()
+    
+    try:
+        cur.execute(
+            """
+            SELECT hd.id, hd.hospital_id, hd.doctor_user_id, u.full_name, u.username,
+                   dp.specialization, dp.experience_years, hd.department, hd.position,
+                   hd.is_active, hd.verification_status, prof.overall_rating, prof.total_reviews,
+                   prof.patient_satisfaction_score, prof.completed_appointments
+            FROM hospital_doctors hd
+            JOIN users u ON hd.doctor_user_id = u.id
+            LEFT JOIN doctor_profiles dp ON u.id = dp.user_id
+            LEFT JOIN doctor_professionalism prof ON u.id = prof.doctor_user_id
+            WHERE hd.hospital_id = %s AND hd.is_active = TRUE
+            ORDER BY prof.overall_rating DESC, u.full_name ASC
+            """,
+            (hospital_id,)
+        )
+        rows = cur.fetchall()
+        
+        doctors = []
+        for row in rows:
+            doctors.append({
+                'id': row[0],
+                'hospital_id': row[1],
+                'doctor_user_id': row[2],
+                'full_name': row[3],
+                'username': row[4],
+                'specialization': row[5],
+                'experience_years': row[6],
+                'department': row[7],
+                'position': row[8],
+                'is_active': row[9],
+                'verification_status': row[10],
+                'overall_rating': float(row[11]) if row[11] else 0,
+                'total_reviews': row[12] or 0,
+                'patient_satisfaction_score': float(row[13]) if row[13] else 0,
+                'completed_appointments': row[14] or 0
+            })
+        
+        return jsonify({'doctors': doctors, 'count': len(doctors)})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+    finally:
+        cur.close()
+
+
+@app.route('/hospital/<int:hospital_id>/add-doctor', methods=['POST'])
+def add_doctor_to_hospital(hospital_id):
+    """Hospital admin adds a doctor to their hospital"""
+    current_user = get_current_user()
+    if not current_user:
+        return jsonify({'error': 'Unauthorized'}), 401
+    
+    # Check if user is hospital admin or dev
+    if current_user.get('role') not in ('hospital_admin', 'dev', 'admin'):
+        return jsonify({'error': 'Forbidden: Only hospital admins can add doctors'}), 403
+    
+    data = request.get_json() or {}
+    doctor_user_id = data.get('doctor_user_id')
+    department = data.get('department', '').strip()
+    position = data.get('position', '').strip()
+    specialization = data.get('specialization', '').strip()
+    
+    if not doctor_user_id:
+        return jsonify({'error': 'doctor_user_id required'}), 400
+    
+    db = get_db()
+    cur = db.cursor()
+    
+    try:
+        # Verify doctor exists
+        cur.execute('SELECT id, role FROM users WHERE id = %s', (doctor_user_id,))
+        doctor = cur.fetchone()
+        if not doctor or doctor[1] != 'doctor':
+            return jsonify({'error': 'Doctor not found or user is not a doctor'}), 404
+        
+        # Check if already added
+        cur.execute(
+            'SELECT id FROM hospital_doctors WHERE hospital_id = %s AND doctor_user_id = %s',
+            (hospital_id, doctor_user_id)
+        )
+        if cur.fetchone():
+            return jsonify({'error': 'Doctor is already added to this hospital'}), 409
+        
+        # Add doctor to hospital
+        now = datetime.utcnow()
+        cur.execute(
+            """
+            INSERT INTO hospital_doctors (hospital_id, doctor_user_id, department, 
+                                         position, specialization, is_active, 
+                                         verification_status, joined_date, created_at, updated_at)
+            VALUES (%s, %s, %s, %s, %s, TRUE, 'verified', %s, %s, %s)
+            """,
+            (hospital_id, doctor_user_id, department, position, specialization, now, now, now)
+        )
+        
+        # Initialize professionalism record if not exists
+        cur.execute(
+            'SELECT id FROM doctor_professionalism WHERE doctor_user_id = %s',
+            (doctor_user_id,)
+        )
+        if not cur.fetchone():
+            cur.execute(
+                """
+                INSERT INTO doctor_professionalism (doctor_user_id, last_updated)
+                VALUES (%s, %s)
+                """,
+                (doctor_user_id, now)
+            )
+        
+        db.commit()
+        return jsonify({'status': 'ok', 'hospital_doctor_id': cur.lastrowid})
+    except Exception as e:
+        db.rollback()
+        return jsonify({'error': str(e)}), 500
+    finally:
+        cur.close()
+
+
+@app.route('/hospital/<int:hospital_id>/remove-doctor/<int:doctor_user_id>', methods=['DELETE'])
+def remove_doctor_from_hospital(hospital_id, doctor_user_id):
+    """Hospital admin removes a doctor from their hospital"""
+    current_user = get_current_user()
+    if not current_user:
+        return jsonify({'error': 'Unauthorized'}), 401
+    
+    if current_user.get('role') not in ('hospital_admin', 'dev', 'admin'):
+        return jsonify({'error': 'Forbidden'}), 403
+    
+    db = get_db()
+    cur = db.cursor()
+    
+    try:
+        cur.execute(
+            'DELETE FROM hospital_doctors WHERE hospital_id = %s AND doctor_user_id = %s',
+            (hospital_id, doctor_user_id)
+        )
+        
+        if cur.rowcount == 0:
+            return jsonify({'error': 'Doctor not found at this hospital'}), 404
+        
+        db.commit()
+        return jsonify({'status': 'ok', 'message': 'Doctor removed from hospital'})
+    except Exception as e:
+        db.rollback()
+        return jsonify({'error': str(e)}), 500
+    finally:
+        cur.close()
+
+
+@app.route('/doctor/<int:doctor_user_id>/professionalism', methods=['GET'])
+def get_doctor_professionalism(doctor_user_id):
+    """Get doctor professionalism metrics and reviews"""
+    db = get_db()
+    cur = db.cursor()
+    
+    try:
+        # Get professionalism metrics
+        cur.execute(
+            """
+            SELECT overall_rating, total_reviews, average_response_time_minutes,
+                   total_appointments, completed_appointments, no_show_rate,
+                   patient_satisfaction_score, certifications, awards, publications
+            FROM doctor_professionalism WHERE doctor_user_id = %s
+            """,
+            (doctor_user_id,)
+        )
+        prof = cur.fetchone()
+        
+        professionalism = {
+            'overall_rating': float(prof[0]) if prof and prof[0] else 0,
+            'total_reviews': prof[1] if prof else 0,
+            'average_response_time_minutes': prof[2] if prof else 0,
+            'total_appointments': prof[3] if prof else 0,
+            'completed_appointments': prof[4] if prof else 0,
+            'no_show_rate': float(prof[5]) if prof and prof[5] else 0,
+            'patient_satisfaction_score': float(prof[6]) if prof and prof[6] else 0,
+            'certifications': json.loads(prof[7]) if prof and prof[7] else [],
+            'awards': json.loads(prof[8]) if prof and prof[8] else [],
+            'publications': json.loads(prof[9]) if prof and prof[9] else []
+        }
+        
+        # Get recent reviews
+        cur.execute(
+            """
+            SELECT dr.id, dr.rating, dr.review_text, dr.is_verified_patient,
+                   dr.helpful_count, dr.created_at, u.full_name
+            FROM doctor_reviews dr
+            JOIN users u ON dr.reviewer_user_id = u.id
+            WHERE dr.doctor_user_id = %s
+            ORDER BY dr.created_at DESC
+            LIMIT 10
+            """,
+            (doctor_user_id,)
+        )
+        review_rows = cur.fetchall()
+        
+        reviews = []
+        for row in review_rows:
+            reviews.append({
+                'id': row[0],
+                'rating': float(row[1]),
+                'review_text': row[2],
+                'is_verified_patient': row[3],
+                'helpful_count': row[4],
+                'created_at': row[5].isoformat() if row[5] else None,
+                'reviewer_name': row[6]
+            })
+        
+        return jsonify({
+            'doctor_user_id': doctor_user_id,
+            'professionalism': professionalism,
+            'recent_reviews': reviews
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+    finally:
+        cur.close()
+
+
+@app.route('/doctor/<int:doctor_user_id>/review', methods=['POST'])
+def submit_doctor_review(doctor_user_id):
+    """Patient submits a review for a doctor"""
+    current_user = get_current_user()
+    if not current_user:
+        return jsonify({'error': 'Unauthorized'}), 401
+    
+    reviewer_id = current_user.get('id') or current_user.get('sub')
+    
+    data = request.get_json() or {}
+    rating = data.get('rating')
+    review_text = data.get('review_text', '').strip()
+    aspects = data.get('aspects', {})
+    
+    # Validate rating
+    if rating is None or not (1 <= rating <= 5):
+        return jsonify({'error': 'rating must be between 1 and 5'}), 400
+    
+    if not review_text:
+        return jsonify({'error': 'review_text required'}), 400
+    
+    db = get_db()
+    cur = db.cursor()
+    
+    try:
+        # Check if doctor exists
+        cur.execute('SELECT id FROM users WHERE id = %s AND role = %s', (doctor_user_id, 'doctor'))
+        if not cur.fetchone():
+            return jsonify({'error': 'Doctor not found'}), 404
+        
+        # Check if user already reviewed this doctor
+        cur.execute(
+            'SELECT id FROM doctor_reviews WHERE doctor_user_id = %s AND reviewer_user_id = %s',
+            (doctor_user_id, reviewer_id)
+        )
+        existing = cur.fetchone()
+        
+        now = datetime.utcnow()
+        
+        if existing:
+            # Update existing review
+            cur.execute(
+                """
+                UPDATE doctor_reviews 
+                SET rating = %s, review_text = %s, aspects = %s, updated_at = %s
+                WHERE doctor_user_id = %s AND reviewer_user_id = %s
+                """,
+                (rating, review_text, json.dumps(aspects), now, doctor_user_id, reviewer_id)
+            )
+        else:
+            # Insert new review
+            cur.execute(
+                """
+                INSERT INTO doctor_reviews (doctor_user_id, reviewer_user_id, rating,
+                                          review_text, aspects, is_verified_patient, created_at, updated_at)
+                VALUES (%s, %s, %s, %s, %s, TRUE, %s, %s)
+                """,
+                (doctor_user_id, reviewer_id, rating, review_text, json.dumps(aspects), now, now)
+            )
+        
+        # Update professionalism metrics
+        cur.execute(
+            """
+            SELECT COUNT(*) as total_reviews, AVG(rating) as avg_rating
+            FROM doctor_reviews WHERE doctor_user_id = %s
+            """
+        )
+        stats = cur.fetchone()
+        
+        cur.execute(
+            """
+            UPDATE doctor_professionalism 
+            SET overall_rating = %s, total_reviews = %s, last_updated = %s
+            WHERE doctor_user_id = %s
+            """,
+            (stats[1] or 0, stats[0] or 0, now, doctor_user_id)
+        )
+        
+        db.commit()
+        return jsonify({'status': 'ok', 'message': 'Review submitted successfully'})
+    except Exception as e:
+        db.rollback()
+        return jsonify({'error': str(e)}), 500
+    finally:
+        cur.close()
+
+
+@app.route('/doctor/<int:doctor_user_id>/reviews', methods=['GET'])
+def get_doctor_reviews(doctor_user_id):
+    """Get all reviews for a doctor"""
+    page = request.args.get('page', 1, type=int)
+    limit = request.args.get('limit', 10, type=int)
+    sort_by = request.args.get('sort_by', 'recent')  # 'recent', 'rating_high', 'rating_low'
+    
+    offset = (page - 1) * limit
+    
+    db = get_db()
+    cur = db.cursor()
+    
+    try:
+        # Build sort clause
+        if sort_by == 'rating_high':
+            order_clause = 'dr.rating DESC'
+        elif sort_by == 'rating_low':
+            order_clause = 'dr.rating ASC'
+        else:  # recent
+            order_clause = 'dr.created_at DESC'
+        
+        cur.execute(
+            f"""
+            SELECT dr.id, dr.rating, dr.review_text, dr.is_verified_patient,
+                   dr.helpful_count, dr.created_at, u.full_name, dr.aspects
+            FROM doctor_reviews dr
+            JOIN users u ON dr.reviewer_user_id = u.id
+            WHERE dr.doctor_user_id = %s
+            ORDER BY {order_clause}
+            LIMIT %s OFFSET %s
+            """,
+            (doctor_user_id, limit, offset)
+        )
+        review_rows = cur.fetchall()
+        
+        # Get total count
+        cur.execute('SELECT COUNT(*) FROM doctor_reviews WHERE doctor_user_id = %s', (doctor_user_id,))
+        total_count = cur.fetchone()[0]
+        
+        reviews = []
+        for row in review_rows:
+            reviews.append({
+                'id': row[0],
+                'rating': float(row[1]),
+                'review_text': row[2],
+                'is_verified_patient': row[3],
+                'helpful_count': row[4],
+                'created_at': row[5].isoformat() if row[5] else None,
+                'reviewer_name': row[6],
+                'aspects': json.loads(row[7]) if row[7] else {}
+            })
+        
+        return jsonify({
+            'reviews': reviews,
+            'total': total_count,
+            'page': page,
+            'limit': limit,
+            'pages': (total_count + limit - 1) // limit
+        })
     except Exception as e:
         return jsonify({'error': str(e)}), 500
     finally:

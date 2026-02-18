@@ -599,5 +599,69 @@ def init_db():
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
         """
     )
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS hospital_doctors (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            hospital_id INT NOT NULL,
+            doctor_user_id INT NOT NULL,
+            is_active BOOLEAN DEFAULT TRUE,
+            joined_date DATETIME,
+            specialization VARCHAR(255),
+            department VARCHAR(255),
+            position VARCHAR(255),
+            verification_status VARCHAR(32) DEFAULT 'pending',
+            created_at DATETIME,
+            updated_at DATETIME,
+            FOREIGN KEY (hospital_id) REFERENCES hospitals(id) ON DELETE CASCADE,
+            FOREIGN KEY (doctor_user_id) REFERENCES users(id) ON DELETE CASCADE,
+            UNIQUE KEY unique_hospital_doctor (hospital_id, doctor_user_id),
+            INDEX idx_hospital_doctors (hospital_id, is_active),
+            INDEX idx_doctor_hospitals (doctor_user_id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        """
+    )
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS doctor_professionalism (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            doctor_user_id INT NOT NULL UNIQUE,
+            overall_rating DECIMAL(3,2) DEFAULT 0,
+            total_reviews INT DEFAULT 0,
+            average_response_time_minutes INT DEFAULT 0,
+            total_appointments INT DEFAULT 0,
+            completed_appointments INT DEFAULT 0,
+            no_show_rate DECIMAL(5,2) DEFAULT 0,
+            patient_satisfaction_score DECIMAL(3,2) DEFAULT 0,
+            certifications JSON,
+            awards JSON,
+            publications JSON,
+            last_updated DATETIME,
+            FOREIGN KEY (doctor_user_id) REFERENCES users(id) ON DELETE CASCADE,
+            INDEX idx_doctor_rating (overall_rating DESC)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        """
+    )
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS doctor_reviews (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            doctor_user_id INT NOT NULL,
+            reviewer_user_id INT NOT NULL,
+            rating DECIMAL(3,2) NOT NULL,
+            review_text TEXT,
+            aspects JSON,
+            is_verified_patient BOOLEAN DEFAULT FALSE,
+            helpful_count INT DEFAULT 0,
+            created_at DATETIME,
+            updated_at DATETIME,
+            FOREIGN KEY (doctor_user_id) REFERENCES users(id) ON DELETE CASCADE,
+            FOREIGN KEY (reviewer_user_id) REFERENCES users(id) ON DELETE CASCADE,
+            INDEX idx_doctor_reviews (doctor_user_id, rating),
+            INDEX idx_reviewer (reviewer_user_id),
+            INDEX idx_created_at (created_at DESC)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        """
+    )
     db.commit()
     db.close()
